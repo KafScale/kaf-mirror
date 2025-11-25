@@ -1,0 +1,287 @@
+// kaf-mirror - A high-performance Kafka replication tool with AI-powered operational intelligence.
+// Copyright (C) 2025 Scalytics
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+package ai
+
+import (
+	"context"
+	"fmt"
+	"kaf-mirror/internal/config"
+	"time"
+
+	"github.com/sashabaranov/go-openai"
+)
+
+// Client is a wrapper for the OpenAI client.
+type Client struct {
+	Client OpenAIClient
+	Cfg    config.AIConfig
+}
+
+// NewClient creates a new AI client.
+func NewClient(cfg config.AIConfig) *Client {
+	if cfg.Provider == "custom" && cfg.Endpoint != "" {
+		// For custom endpoints, create config with custom endpoint
+		config := openai.DefaultConfig(cfg.Token)
+		config.BaseURL = cfg.Endpoint
+		return &Client{
+			Client: openai.NewClientWithConfig(config),
+			Cfg:    cfg,
+		}
+	} else {
+		// For OpenAI or other standard providers
+		config := openai.DefaultConfig(cfg.Token)
+		if cfg.Endpoint != "" {
+			config.BaseURL = cfg.Endpoint
+		}
+		return &Client{
+			Client: openai.NewClientWithConfig(config),
+			Cfg:    cfg,
+		}
+	}
+}
+
+// GetAnomalyDetection analyzes metrics for unusual patterns.
+func (c *Client) GetAnomalyDetection(ctx context.Context, metrics string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka monitoring assistant. Analyze the following time-series metrics from a Kafka kaf-mirror job and identify any potential anomalies.
+Look for sudden spikes or drops in message throughput, unusual increases in lag, or a high error rate.
+Provide a concise summary of any anomalies found. If no anomalies are detected, state that the system appears stable.
+
+Metrics:
+%s
+`, metrics)
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetAnomalyDetectionWithResponseTime analyzes metrics for unusual patterns and returns response time.
+func (c *Client) GetAnomalyDetectionWithResponseTime(ctx context.Context, metrics string) (string, int, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka monitoring assistant. Analyze the following time-series metrics from a Kafka kaf-mirror job and identify any potential anomalies.
+Look for sudden spikes or drops in message throughput, unusual increases in lag, or a high error rate.
+Provide a concise summary of any anomalies found. If no anomalies are detected, state that the system appears stable.
+
+Metrics:
+%s
+`, metrics)
+	return c.getCompletionWithResponseTime(ctx, prompt)
+}
+
+// GetPerformanceRecommendation provides a performance recommendation based on current metrics.
+func (c *Client) GetPerformanceRecommendation(ctx context.Context, metrics string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka performance tuning assistant. Based on the following metrics from a Kafka kaf-mirror job, provide a concrete recommendation for optimization.
+Consider parameters like batch size, parallelism, and compression. Explain your reasoning.
+
+Metrics:
+%s
+`, metrics)
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetPerformanceRecommendationWithResponseTime provides a performance recommendation and returns response time.
+func (c *Client) GetPerformanceRecommendationWithResponseTime(ctx context.Context, metrics string) (string, int, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka performance tuning assistant. Based on the following metrics from a Kafka kaf-mirror job, provide a concrete recommendation for optimization.
+Consider parameters like batch size, parallelism, and compression. Explain your reasoning.
+
+Metrics:
+%s
+`, metrics)
+	return c.getCompletionWithResponseTime(ctx, prompt)
+}
+
+// ExplainEvent provides an explanation for a given event.
+func (c *Client) ExplainEvent(ctx context.Context, event string) (string, error) {
+	prompt := "Explain the likely cause of this Kafka event:\n" + event
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetIncidentAnalysis provides a detailed analysis of an operational incident.
+func (c *Client) GetIncidentAnalysis(ctx context.Context, eventDetails string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are a senior Site Reliability Engineer (SRE) specializing in Kafka. An operational event has occurred in the kaf-mirror replication system.
+Analyze the following event details and provide a full incident report.
+
+The report must include:
+1.  **Root Cause Analysis:** What is the most likely technical cause of this event?
+2.  **Impact Assessment:** What is the potential impact on data replication, system stability, and data integrity?
+3.  **Recommended Mitigation:** What are the immediate, concrete steps that should be taken to resolve this issue?
+4.  **Preventative Measures:** What long-term changes could be made to prevent this type of incident in the future?
+
+Event Details:
+%s
+`, eventDetails)
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetIncidentAnalysisWithResponseTime provides a detailed analysis of an operational incident and returns response time.
+func (c *Client) GetIncidentAnalysisWithResponseTime(ctx context.Context, eventDetails string) (string, int, error) {
+	prompt := fmt.Sprintf(`
+You are a senior Site Reliability Engineer (SRE) specializing in Kafka. An operational event has occurred in the kaf-mirror replication system.
+Analyze the following event details and provide a full incident report.
+
+The report must include:
+1.  **Root Cause Analysis:** What is the most likely technical cause of this event?
+2.  **Impact Assessment:** What is the potential impact on data replication, system stability, and data integrity?
+3.  **Recommended Mitigation:** What are the immediate, concrete steps that should be taken to resolve this issue?
+4.  **Preventative Measures:** What long-term changes could be made to prevent this type of incident in the future?
+
+Event Details:
+%s
+`, eventDetails)
+	return c.getCompletionWithResponseTime(ctx, prompt)
+}
+
+// GetEnhancedInsights analyzes both metrics and operation logs together for comprehensive insights.
+func (c *Client) GetEnhancedInsights(ctx context.Context, metrics string, logs string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka operations analyst with deep experience in high-throughput streaming systems. 
+Analyze the following metrics and operational logs from a Kafka kaf-mirror replication job to provide comprehensive insights.
+
+Consider both the quantitative metrics and qualitative log patterns to identify:
+1. **Performance Issues**: Throughput bottlenecks, latency spikes, resource constraints
+2. **Error Patterns**: Recurring failures, connection issues, authentication problems
+3. **Operational Health**: System stability, error recovery patterns, configuration issues
+4. **Optimization Opportunities**: Performance tuning recommendations, configuration adjustments
+5. **Predictive Insights**: Potential future issues based on current trends
+
+Provide specific, actionable recommendations with priority levels (Critical, High, Medium, Low).
+
+METRICS DATA:
+%s
+
+OPERATION LOGS:
+%s
+
+Focus on correlating metrics patterns with log events to provide deeper insights than either data source alone.
+`, metrics, logs)
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetEnhancedInsightsWithResponseTime analyzes both metrics and operation logs and returns response time.
+func (c *Client) GetEnhancedInsightsWithResponseTime(ctx context.Context, metrics string, logs string) (string, int, error) {
+	prompt := fmt.Sprintf(`
+You are an expert Kafka operations analyst with deep experience in high-throughput streaming systems. 
+Analyze the following metrics and operational logs from a Kafka kaf-mirror replication job to provide comprehensive insights.
+
+Consider both the quantitative metrics and qualitative log patterns to identify:
+1. **Performance Issues**: Throughput bottlenecks, latency spikes, resource constraints
+2. **Error Patterns**: Recurring failures, connection issues, authentication problems
+3. **Operational Health**: System stability, error recovery patterns, configuration issues
+4. **Optimization Opportunities**: Performance tuning recommendations, configuration adjustments
+5. **Predictive Insights**: Potential future issues based on current trends
+
+Provide specific, actionable recommendations with priority levels (Critical, High, Medium, Low).
+
+METRICS DATA:
+%s
+
+OPERATION LOGS:
+%s
+
+Focus on correlating metrics patterns with log events to provide deeper insights than either data source alone.
+`, metrics, logs)
+	return c.getCompletionWithResponseTime(ctx, prompt)
+}
+
+// GetLogPatternAnalysis analyzes operation logs for patterns and anomalies.
+func (c *Client) GetLogPatternAnalysis(ctx context.Context, logs string) (string, error) {
+	prompt := fmt.Sprintf(`
+You are a Kafka operations expert analyzing system logs for patterns and anomalies.
+Review the following producer and consumer operation logs to identify:
+
+1. **Error Patterns**: Recurring errors, failure sequences, escalation patterns
+2. **Performance Indicators**: Batch processing efficiency, connection stability
+3. **Configuration Issues**: Authentication problems, network connectivity issues
+4. **Recovery Patterns**: How the system handles and recovers from errors
+5. **Operational Insights**: System behavior patterns, resource utilization indicators
+
+Provide clear, actionable insights with specific recommendations for improvements.
+
+OPERATION LOGS:
+%s
+`, logs)
+	return c.getCompletion(ctx, prompt)
+}
+
+// GetLogPatternAnalysisWithResponseTime analyzes operation logs and returns response time.
+func (c *Client) GetLogPatternAnalysisWithResponseTime(ctx context.Context, logs string) (string, int, error) {
+	prompt := fmt.Sprintf(`
+You are a Kafka operations expert analyzing system logs for patterns and anomalies.
+Review the following producer and consumer operation logs to identify:
+
+1. **Error Patterns**: Recurring errors, failure sequences, escalation patterns
+2. **Performance Indicators**: Batch processing efficiency, connection stability
+3. **Configuration Issues**: Authentication problems, network connectivity issues
+4. **Recovery Patterns**: How the system handles and recovers from errors
+5. **Operational Insights**: System behavior patterns, resource utilization indicators
+
+Provide clear, actionable insights with specific recommendations for improvements.
+
+OPERATION LOGS:
+%s
+`, logs)
+	return c.getCompletionWithResponseTime(ctx, prompt)
+}
+
+func (c *Client) getCompletion(ctx context.Context, prompt string) (string, error) {
+	resp, err := c.Client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: c.Cfg.Model,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+// getCompletionWithResponseTime returns both the completion and the response time in milliseconds
+func (c *Client) getCompletionWithResponseTime(ctx context.Context, prompt string) (string, int, error) {
+	startTime := time.Now()
+	
+	resp, err := c.Client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: c.Cfg.Model,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: prompt,
+				},
+			},
+		},
+	)
+
+	responseTime := int(time.Since(startTime).Milliseconds())
+
+	if err != nil {
+		return "", responseTime, err
+	}
+
+	return resp.Choices[0].Message.Content, responseTime, nil
+}

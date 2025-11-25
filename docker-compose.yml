@@ -1,0 +1,72 @@
+services:
+  kafka-source:
+    image: redpandadata/redpanda:v23.2.12
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://kafka-source:9092
+      - --set
+      - redpanda.auto_create_topics_enabled=true
+    ports:
+      - "19092:9092"
+    networks:
+      - kaf-mirror
+
+  kafka-target:
+    image: redpandadata/redpanda:v23.2.12
+    command:
+      - redpanda
+      - start
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "1"
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://kafka-target:9092
+      - --set
+      - redpanda.auto_create_topics_enabled=true
+    ports:
+      - "29092:9092"
+    networks:
+      - kaf-mirror
+
+  kaf-mirror:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - CONFIG_PATH=/app/configs/docker.yml
+    volumes:
+      - ./configs/docker.yml:/app/configs/docker.yml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - kafka-source
+      - kafka-target
+    networks:
+      - kaf-mirror
+
+networks:
+  kaf-mirror:
+    driver: bridge

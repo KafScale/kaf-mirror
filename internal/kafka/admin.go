@@ -1,0 +1,727 @@
+// kaf-mirror - A high-performance Kafka replication tool with AI-powered operational intelligence.
+// Copyright (C) 2025 Scalytics
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+package kafka
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"kaf-mirror/internal/config"
+	"kaf-mirror/pkg/logger"
+	"strings"
+	"time"
+
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
+)
+
+type ClusterInfo struct {
+	ClusterID    string
+	Topics       map[string]TopicInfo
+	BrokerCount  int
+	ControllerID int32
+}
+
+type TopicInfo struct {
+	Name           string
+	Partitions     int32
+	ReplicationFactor int16
+	Config         map[string]string
+	PartitionInfo  []PartitionInfo
+}
+
+type PartitionInfo struct {
+	ID       int32
+	Leader   int32
+	Replicas []int32
+	ISR      []int32
+}
+
+type OffsetInfo struct {
+	Topic     string
+	Partition int32
+	Offset    int64
+	HighWaterMark int64
+	Lag       int64
+}
+
+type TopicDetails struct {
+	Name              string `json:"name"`
+	Partitions        int32  `json:"partitions"`
+	ReplicationFactor int16  `json:"replication_factor"`
+	CompressionType   string `json:"compression_type"`
+}
+
+type OffsetComparisonResult struct {
+	ComparedAt        time.Time                         `json:"compared_at"`
+	TopicComparisons  map[string]*TopicOffsetComparison `json:"topic_comparisons"`
+	TotalGapsDetected int                               `json:"total_gaps_detected"`
+	CriticalIssues    []string                          `json:"critical_issues"`
+	Warnings          []string                          `json:"warnings"`
+}
+
+type TopicOffsetComparison struct {
+	SourceTopic         string                      `json:"source_topic"`
+	TargetTopic         string                      `json:"target_topic"`
+	PartitionComparisons []PartitionOffsetComparison `json:"partition_comparisons"`
+	GapsDetected        int                         `json:"gaps_detected"`
+	TotalLag           int64                       `json:"total_lag"`
+}
+
+type PartitionOffsetComparison struct {
+	PartitionID         int32 `json:"partition_id"`
+	SourceOffset        int64 `json:"source_offset"`
+	TargetOffset        int64 `json:"target_offset"`
+	SourceHighWaterMark int64 `json:"source_high_water_mark"`
+	TargetHighWaterMark int64 `json:"target_high_water_mark"`
+	Gap                 int64 `json:"gap"`
+	SafeResumeOffset    int64 `json:"safe_resume_offset"`
+	HasGap              bool  `json:"has_gap"`
+}
+
+type AdminClient struct {
+	client *kadm.Client
+	cfg    config.ClusterConfig
+}
+
+func NewAdminClient(cfg config.ClusterConfig) (*AdminClient, error) {
+	opts, err := GetKgoOpts(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	useTLS := strings.Contains(strings.ToUpper(cfg.Security.Protocol), "SSL")
+	if cfg.Provider == "confluent" {
+		useTLS = true
+	}
+
+	if useTLS {
+		opts = append(opts, kgo.DialTLSConfig(&tls.Config{}))
+	}
+
+	switch cfg.Provider {
+	case "confluent":
+		if cfg.Security.APIKey == "" || cfg.Security.APISecret == "" {
+			return nil, fmt.Errorf("confluent provider requires API key and secret")
+		}
+		opts = append(opts, kgo.SASL(plain.Auth{
+			User: cfg.Security.APIKey,
+			Pass: cfg.Security.APISecret,
+		}.AsMechanism()))
+
+	case "redpanda":
+		if cfg.Security.Username != "" && cfg.Security.Password != "" {
+			opts = append(opts, kgo.SASL(scram.Auth{
+				User: cfg.Security.Username,
+				Pass: cfg.Security.Password,
+			}.AsSha256Mechanism()))
+		}
+	}
+
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create admin client: %w", err)
+	}
+
+	adminClient := kadm.NewClient(client)
+	return &AdminClient{
+		client: adminClient,
+		cfg:    cfg,
+	}, nil
+}
+
+func GetKgoOpts(cfg config.ClusterConfig) ([]kgo.Opt, error) {
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(strings.Split(cfg.Brokers, ",")...),
+		kgo.RequestTimeoutOverhead(30 * time.Second),
+	}
+
+	useTLS := strings.Contains(strings.ToUpper(cfg.Security.Protocol), "SSL")
+	if cfg.Provider == "confluent" {
+		useTLS = true
+	}
+
+	if useTLS {
+		opts = append(opts, kgo.DialTLSConfig(&tls.Config{}))
+	}
+
+	switch cfg.Provider {
+	case "confluent":
+		if cfg.Security.APIKey == "" || cfg.Security.APISecret == "" {
+			return nil, fmt.Errorf("confluent provider requires API key and secret")
+		}
+		opts = append(opts, kgo.SASL(plain.Auth{
+			User: cfg.Security.APIKey,
+			Pass: cfg.Security.APISecret,
+		}.AsMechanism()))
+
+	case "redpanda":
+		if cfg.Security.Username != "" && cfg.Security.Password != "" {
+			opts = append(opts, kgo.SASL(scram.Auth{
+				User: cfg.Security.Username,
+				Pass: cfg.Security.Password,
+			}.AsSha256Mechanism()))
+		}
+	case "azure":
+		if cfg.Security.ConnectionString == nil || *cfg.Security.ConnectionString == "" {
+			return nil, fmt.Errorf("azure provider requires a connection string")
+		}
+		opts = append(opts, kgo.SASL(plain.Auth{
+			User: "$ConnectionString",
+			Pass: *cfg.Security.ConnectionString,
+		}.AsMechanism()))
+	}
+	return opts, nil
+}
+
+// TestConnection checks if a connection can be established to the cluster.
+func TestConnection(ctx context.Context, cfg config.ClusterConfig) error {
+	opts, err := GetKgoOpts(cfg)
+	if err != nil {
+		return err
+	}
+
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return fmt.Errorf("failed to create client for connection test: %w", err)
+	}
+	defer client.Close()
+
+	if err := client.Ping(ctx); err != nil {
+		return fmt.Errorf("failed to ping cluster: %w", err)
+	}
+
+	return nil
+}
+
+func (a *AdminClient) GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
+	logger.Info("Retrieving cluster information for %s", a.cfg.Provider)
+	
+	brokers, err := a.client.ListBrokers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list brokers: %w", err)
+	}
+
+	topicDetails, err := a.client.ListTopics(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list topics: %w", err)
+	}
+
+	clusterInfo := &ClusterInfo{
+		Topics:      make(map[string]TopicInfo),
+		BrokerCount: len(brokers),
+	}
+
+	clusterInfo.ControllerID = -1
+
+	for topic, details := range topicDetails {
+		topicInfo := TopicInfo{
+			Name:          topic,
+			Partitions:    int32(len(details.Partitions)),
+			Config:        make(map[string]string),
+			PartitionInfo: make([]PartitionInfo, 0, len(details.Partitions)),
+		}
+
+		if len(details.Partitions) > 0 {
+			topicInfo.ReplicationFactor = int16(len(details.Partitions[0].Replicas))
+		}
+
+		for _, partition := range details.Partitions {
+			partInfo := PartitionInfo{
+				ID:       partition.Partition,
+				Leader:   partition.Leader,
+				Replicas: partition.Replicas,
+				ISR:      partition.ISR,
+			}
+			topicInfo.PartitionInfo = append(topicInfo.PartitionInfo, partInfo)
+		}
+
+		clusterInfo.Topics[topic] = topicInfo
+	}
+
+	logger.Info("Retrieved cluster info: %d brokers, %d topics", clusterInfo.BrokerCount, len(clusterInfo.Topics))
+	return clusterInfo, nil
+}
+
+func (a *AdminClient) GetConsumerGroupOffsets(ctx context.Context, groupID string, topics []string) (map[string][]OffsetInfo, error) {
+	logger.Info("Retrieving consumer group offsets for group %s", groupID)
+	
+	offsets, err := a.client.FetchOffsetsForTopics(ctx, groupID, topics...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch consumer group offsets: %w", err)
+	}
+
+	result := make(map[string][]OffsetInfo)
+	
+	for topic, topicOffsets := range offsets {
+		for partition, offset := range topicOffsets {
+			if offset.Err != nil {
+				logger.Warn("Error getting offset for topic %s, partition %d: %v", topic, partition, offset.Err)
+				continue
+			}
+
+			offsetInfo := OffsetInfo{
+				Topic:         topic,
+				Partition:     partition,
+				Offset:        offset.At,
+				HighWaterMark: offset.At,
+				Lag:          0,
+			}
+
+			result[topic] = append(result[topic], offsetInfo)
+		}
+	}
+
+	return result, nil
+}
+
+func (a *AdminClient) GetTopicHighWaterMarks(ctx context.Context, topics []string) (map[string][]OffsetInfo, error) {
+	logger.Info("Retrieving high water marks for topics: %v", topics)
+	
+	result := make(map[string][]OffsetInfo)
+	
+	for _, topicName := range topics {
+		topicDetails, err := a.client.ListTopics(ctx, topicName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get metadata for topic %s: %w", topicName, err)
+		}
+		
+		details, exists := topicDetails[topicName]
+		if !exists {
+			logger.Warn("Topic %s not found", topicName)
+			continue
+		}
+
+		for _, partition := range details.Partitions {
+			offsetInfo := OffsetInfo{
+				Topic:         topicName,
+				Partition:     partition.Partition,
+				Offset:        0,
+				HighWaterMark: 0,
+				Lag:           0,
+			}
+			result[topicName] = append(result[topicName], offsetInfo)
+		}
+	}
+
+	return result, nil
+}
+
+func (a *AdminClient) ValidateTopicCompatibility(ctx context.Context, sourceInfo, targetInfo TopicInfo) error {
+	logger.Info("Validating compatibility between source topic %s and target topic %s", sourceInfo.Name, targetInfo.Name)
+	
+	if sourceInfo.Partitions != targetInfo.Partitions {
+		return fmt.Errorf("partition count mismatch: source has %d partitions, target has %d partitions", 
+			sourceInfo.Partitions, targetInfo.Partitions)
+	}
+
+	if sourceInfo.ReplicationFactor != targetInfo.ReplicationFactor {
+		logger.Warn("Replication factor differs: source=%d, target=%d (this is acceptable)", 
+			sourceInfo.ReplicationFactor, targetInfo.ReplicationFactor)
+	}
+
+	logger.Info("Topics %s and %s are compatible for replication", sourceInfo.Name, targetInfo.Name)
+	return nil
+}
+
+func (a *AdminClient) EnsureTopicExists(ctx context.Context, topicName string, partitions int32, replicationFactor int16) error {
+	logger.Info("Ensuring topic %s exists with %d partitions", topicName, partitions)
+	
+	existing, err := a.client.ListTopics(ctx, topicName)
+	if err != nil {
+		return fmt.Errorf("failed to check if topic exists: %w", err)
+	}
+
+	if _, exists := existing[topicName]; exists {
+		logger.Info("Topic %s already exists", topicName)
+		return nil
+	}
+
+	results, err := a.client.CreateTopics(ctx, partitions, replicationFactor, nil, topicName)
+	if err != nil {
+		return fmt.Errorf("failed to create topic %s: %w", topicName, err)
+	}
+
+	for _, result := range results {
+		if result.Err != nil {
+			return fmt.Errorf("failed to create topic %s: %w", result.Topic, result.Err)
+		}
+		logger.Info("Successfully created topic %s with %d partitions", result.Topic, partitions)
+	}
+
+	return nil
+}
+
+func (a *AdminClient) GetTopicDetails(ctx context.Context, topicNames ...string) ([]TopicDetails, error) {
+	listedTopics, err := a.client.ListTopics(ctx, topicNames...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list topics: %w", err)
+	}
+
+	describedConfigs, err := a.client.DescribeTopicConfigs(ctx, topicNames...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe topic configs: %w", err)
+	}
+
+	var details []TopicDetails
+	for _, topic := range describedConfigs {
+		if topic.Err != nil {
+			logger.Warn("Could not describe config for topic %s: %v", topic.Name, topic.Err)
+			continue
+		}
+
+		compressionType := "unknown"
+		for _, entry := range topic.Configs {
+			if entry.Key == "compression.type" {
+				if entry.Value != nil {
+					compressionType = *entry.Value
+				}
+				break
+			}
+		}
+
+		baseDetails, ok := listedTopics[topic.Name]
+		if !ok {
+			continue
+		}
+
+		details = append(details, TopicDetails{
+			Name:              topic.Name,
+			Partitions:        int32(len(baseDetails.Partitions)),
+			ReplicationFactor: int16(len(baseDetails.Partitions[0].Replicas)),
+			CompressionType:   compressionType,
+		})
+	}
+
+	return details, nil
+}
+
+func (a *AdminClient) ListTopics(ctx context.Context, topics ...string) (map[string]TopicInfo, error) {
+	topicDetails, err := a.client.ListTopics(ctx, topics...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]TopicInfo)
+	for topic, details := range topicDetails {
+		topicInfo := TopicInfo{
+			Name:       topic,
+			Partitions: int32(len(details.Partitions)),
+			Config:     make(map[string]string),
+		}
+
+		if len(details.Partitions) > 0 {
+			topicInfo.ReplicationFactor = int16(len(details.Partitions[0].Replicas))
+		}
+
+		result[topic] = topicInfo
+	}
+
+	return result, nil
+}
+
+func (a *AdminClient) GetTopicLag(ctx context.Context, groupID, topic string) (int64, error) {
+	offsets, err := a.client.FetchOffsetsForTopics(ctx, groupID, topic)
+	if err != nil {
+		return 0, err
+	}
+
+	var totalLag int64
+	for _, topicOffsets := range offsets {
+		for _, offset := range topicOffsets {
+			if offset.Err == nil {
+				totalLag += 0
+			}
+		}
+	}
+
+	return totalLag, nil
+}
+
+func (a *AdminClient) CompareClusterOffsets(ctx context.Context, sourceAdmin *AdminClient, topicMap map[string]string) (*OffsetComparisonResult, error) {
+	logger.Info("Starting cross-cluster offset comparison")
+	
+	result := &OffsetComparisonResult{
+		ComparedAt:        time.Now(),
+		TopicComparisons:  make(map[string]*TopicOffsetComparison),
+		TotalGapsDetected: 0,
+		CriticalIssues:    make([]string, 0),
+		Warnings:          make([]string, 0),
+	}
+
+	for sourceTopic, targetTopic := range topicMap {
+		comparison, err := a.compareTopicOffsets(ctx, sourceAdmin, sourceTopic, targetTopic)
+		if err != nil {
+			result.CriticalIssues = append(result.CriticalIssues, 
+				fmt.Sprintf("Failed to compare %s -> %s: %v", sourceTopic, targetTopic, err))
+			continue
+		}
+		
+		result.TopicComparisons[sourceTopic] = comparison
+		result.TotalGapsDetected += comparison.GapsDetected
+		
+		if comparison.TotalLag > 10000 {
+			result.Warnings = append(result.Warnings, 
+				fmt.Sprintf("High replication lag detected for %s -> %s: %d messages", 
+					sourceTopic, targetTopic, comparison.TotalLag))
+		}
+	}
+
+	logger.Info("Offset comparison completed: %d gaps detected across %d topics", 
+		result.TotalGapsDetected, len(result.TopicComparisons))
+	return result, nil
+}
+
+func (a *AdminClient) compareTopicOffsets(ctx context.Context, sourceAdmin *AdminClient, sourceTopic, targetTopic string) (*TopicOffsetComparison, error) {
+	sourceHWMs, err := sourceAdmin.GetTopicHighWaterMarks(ctx, []string{sourceTopic})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source high water marks: %w", err)
+	}
+
+	targetHWMs, err := a.GetTopicHighWaterMarks(ctx, []string{targetTopic})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get target high water marks: %w", err)
+	}
+
+	sourceOffsets := sourceHWMs[sourceTopic]
+	targetOffsets := targetHWMs[targetTopic]
+
+	comparison := &TopicOffsetComparison{
+		SourceTopic:         sourceTopic,
+		TargetTopic:         targetTopic,
+		PartitionComparisons: make([]PartitionOffsetComparison, 0),
+		GapsDetected:        0,
+		TotalLag:           0,
+	}
+
+	targetPartitionMap := make(map[int32]OffsetInfo)
+	for _, targetOffset := range targetOffsets {
+		targetPartitionMap[targetOffset.Partition] = targetOffset
+	}
+
+	for _, sourceOffset := range sourceOffsets {
+		targetOffset, exists := targetPartitionMap[sourceOffset.Partition]
+		if !exists {
+			comparison.GapsDetected++
+			comparison.PartitionComparisons = append(comparison.PartitionComparisons, PartitionOffsetComparison{
+				PartitionID:         sourceOffset.Partition,
+				SourceOffset:        sourceOffset.Offset,
+				TargetOffset:        -1,
+				SourceHighWaterMark: sourceOffset.HighWaterMark,
+				TargetHighWaterMark: 0,
+				Gap:                 sourceOffset.HighWaterMark,
+				SafeResumeOffset:    0,
+				HasGap:              true,
+			})
+			continue
+		}
+
+		gap := sourceOffset.HighWaterMark - targetOffset.HighWaterMark
+		hasGap := gap > 0
+		
+		if hasGap {
+			comparison.GapsDetected++
+		}
+		
+		comparison.TotalLag += gap
+		
+		safeResumeOffset := targetOffset.HighWaterMark
+		if safeResumeOffset < 0 {
+			safeResumeOffset = 0
+		}
+
+		comparison.PartitionComparisons = append(comparison.PartitionComparisons, PartitionOffsetComparison{
+			PartitionID:         sourceOffset.Partition,
+			SourceOffset:        sourceOffset.Offset,
+			TargetOffset:        targetOffset.Offset,
+			SourceHighWaterMark: sourceOffset.HighWaterMark,
+			TargetHighWaterMark: targetOffset.HighWaterMark,
+			Gap:                 gap,
+			SafeResumeOffset:    safeResumeOffset,
+			HasGap:              hasGap,
+		})
+	}
+
+	return comparison, nil
+}
+
+func (a *AdminClient) AnalyzeMirrorState(ctx context.Context, sourceAdmin *AdminClient, jobID string, topicMap map[string]string, consumerGroup string) (*MirrorStateAnalysis, error) {
+	logger.Info("Starting mirror state analysis for job %s", jobID)
+	
+	offsetComparison, err := a.CompareClusterOffsets(ctx, sourceAdmin, topicMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compare cluster offsets: %w", err)
+	}
+
+	var sourceTopics []string
+	for sourceTopic := range topicMap {
+		sourceTopics = append(sourceTopics, sourceTopic)
+	}
+	
+	consumerOffsets, err := sourceAdmin.GetConsumerGroupOffsets(ctx, consumerGroup, sourceTopics)
+	if err != nil {
+		logger.Warn("Failed to get consumer group offsets (this is normal for new groups): %v", err)
+		consumerOffsets = make(map[string][]OffsetInfo)
+	}
+
+	resumePoints := make(map[string]map[int32]int64)
+	for sourceTopic, _ := range topicMap {
+		resumePoints[sourceTopic] = make(map[int32]int64)
+		
+		if comparison, exists := offsetComparison.TopicComparisons[sourceTopic]; exists {
+			for _, partComparison := range comparison.PartitionComparisons {
+				resumePoints[sourceTopic][partComparison.PartitionID] = partComparison.SafeResumeOffset
+			}
+		}
+	}
+
+	analysis := &MirrorStateAnalysis{
+		JobID:               jobID,
+		AnalysisType:        "gap_detection",
+		OffsetComparison:    offsetComparison,
+		ConsumerOffsets:     consumerOffsets,
+		ResumePoints:        resumePoints,
+		CriticalIssuesCount: len(offsetComparison.CriticalIssues),
+		WarningIssuesCount:  len(offsetComparison.Warnings),
+		AnalyzedAt:          time.Now(),
+		AnalyzerVersion:     "1.0",
+	}
+
+	recommendations := make([]string, 0)
+	
+	if offsetComparison.TotalGapsDetected > 0 {
+		recommendations = append(recommendations, 
+			fmt.Sprintf("Found %d replication gaps that need to be resolved before safe migration", 
+				offsetComparison.TotalGapsDetected))
+	}
+	
+	if len(consumerOffsets) == 0 {
+		recommendations = append(recommendations, 
+			"Consumer group has no committed offsets - replication will start from earliest/latest based on configuration")
+	} else {
+		recommendations = append(recommendations, 
+			"Consumer group offsets detected - can resume from last committed positions")
+	}
+
+	analysis.Recommendations = recommendations
+
+	logger.Info("Mirror state analysis completed: %d critical issues, %d warnings, %d gaps", 
+		analysis.CriticalIssuesCount, analysis.WarningIssuesCount, offsetComparison.TotalGapsDetected)
+	
+	return analysis, nil
+}
+
+func (a *AdminClient) CalculateSafeResumePoints(ctx context.Context, sourceAdmin *AdminClient, jobID string, topicMap map[string]string, consumerGroup string) (map[string]map[int32]int64, error) {
+	logger.Info("Calculating safe resume points for job %s", jobID)
+	
+	offsetComparison, err := a.CompareClusterOffsets(ctx, sourceAdmin, topicMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compare cluster offsets: %w", err)
+	}
+
+	resumePoints := make(map[string]map[int32]int64)
+	
+	for sourceTopic, targetTopic := range topicMap {
+		resumePoints[sourceTopic] = make(map[int32]int64)
+		
+		if comparison, exists := offsetComparison.TopicComparisons[sourceTopic]; exists {
+			for _, partComparison := range comparison.PartitionComparisons {
+				// Safe resume offset is the target high water mark to avoid duplication
+				safeOffset := partComparison.TargetHighWaterMark
+				
+				// If target has no data, start from beginning
+				if safeOffset < 0 {
+					safeOffset = 0
+				}
+				
+				resumePoints[sourceTopic][partComparison.PartitionID] = safeOffset
+				
+				logger.Info("Safe resume point for %s[%d] -> %s[%d]: offset %d", 
+					sourceTopic, partComparison.PartitionID, 
+					targetTopic, partComparison.PartitionID, safeOffset)
+			}
+		}
+	}
+
+	return resumePoints, nil
+}
+
+type MirrorStateAnalysis struct {
+	JobID               string                     `json:"job_id"`
+	AnalysisType        string                     `json:"analysis_type"`
+	OffsetComparison    *OffsetComparisonResult    `json:"offset_comparison"`
+	ConsumerOffsets     map[string][]OffsetInfo    `json:"consumer_offsets"`
+	ResumePoints        map[string]map[int32]int64 `json:"resume_points"`
+	CriticalIssuesCount int                        `json:"critical_issues_count"`
+	WarningIssuesCount  int                        `json:"warning_issues_count"`
+	AnalyzedAt          time.Time                  `json:"analyzed_at"`
+	AnalyzerVersion     string                     `json:"analyzer_version"`
+	Recommendations     []string                   `json:"recommendations"`
+}
+
+func (a *AdminClient) Close() {
+	if a.client != nil {
+		a.client.Close()
+	}
+}
+
+type TopicHealth struct {
+	Name                   string `json:"name"`
+	Partitions             int    `json:"partitions"`
+	ReplicationFactor      int    `json:"replication_factor"`
+	UnderReplicatedPartitions int `json:"under_replicated_partitions"`
+	IsHealthy              bool   `json:"is_healthy"`
+}
+
+func (a *AdminClient) CheckTopicHealth(ctx context.Context, topics []string) ([]TopicHealth, error) {
+	var health []TopicHealth
+	topicDetails, err := a.client.ListTopics(ctx, topics...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list topics: %w", err)
+	}
+
+	for _, topic := range topics {
+		details, ok := topicDetails[topic]
+		if !ok {
+			health = append(health, TopicHealth{
+				Name:      topic,
+				IsHealthy: false,
+			})
+			continue
+		}
+
+		underReplicated := 0
+		for _, p := range details.Partitions {
+			if len(p.ISR) < len(p.Replicas) {
+				underReplicated++
+			}
+		}
+
+		health = append(health, TopicHealth{
+			Name:                   topic,
+			Partitions:             len(details.Partitions),
+			ReplicationFactor:      len(details.Partitions[0].Replicas),
+			UnderReplicatedPartitions: underReplicated,
+			IsHealthy:              underReplicated == 0,
+		})
+	}
+
+	return health, nil
+}

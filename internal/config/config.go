@@ -1,0 +1,211 @@
+// kaf-mirror - A high-performance Kafka replication tool with AI-powered operational intelligence.
+// Copyright (C) 2025 Scalytics
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+package config
+
+import (
+	"fmt"
+	"kaf-mirror/pkg/utils"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/spf13/viper"
+)
+
+// Config holds the entire application configuration
+type Config struct {
+	Server      ServerConfig                `mapstructure:"server"`
+	Database    DatabaseConfig              `mapstructure:"database"`
+	Logging     LoggingConfig               `mapstructure:"logging"`
+	Clusters    map[string]ClusterConfig    `mapstructure:"clusters"`
+	Replication ReplicationConfig           `mapstructure:"replication"`
+	Topics      []TopicMapping              `mapstructure:"topic_mappings"`
+	AI          AIConfig                    `mapstructure:"ai"`
+	Monitoring  MonitoringConfig            `mapstructure:"monitoring"`
+}
+
+// ServerConfig defines server settings
+type ServerConfig struct {
+	Host       string `mapstructure:"host"`
+	Port       int    `mapstructure:"port"`
+	Mode       string `mapstructure:"mode"`
+	AdminEmail string `mapstructure:"admin_email"`
+	WebPath    string `mapstructure:"web_path"`
+	TLS        struct {
+		Enabled  bool   `mapstructure:"enabled"`
+		CertFile string `mapstructure:"cert_file"`
+		KeyFile  string `mapstructure:"key_file"`
+	} `mapstructure:"tls"`
+	CORS struct {
+		AllowedOrigins []string `mapstructure:"allowed_origins"`
+	} `mapstructure:"cors"`
+}
+
+// DatabaseConfig defines database settings
+type DatabaseConfig struct {
+	Path string `mapstructure:"path"`
+}
+
+type LoggingConfig struct {
+	Level       string `mapstructure:"level"`
+	File        string `mapstructure:"file"`
+	MaxSize     int    `mapstructure:"max_size"`
+	MaxBackups  int    `mapstructure:"max_backups"`
+	MaxAge      int    `mapstructure:"max_age"`
+	Console     bool   `mapstructure:"console"`
+}
+
+// ClusterConfig defines Kafka cluster connection details
+type ClusterConfig struct {
+	Provider  string         `mapstructure:"provider"`
+	ClusterID string         `mapstructure:"cluster_id"`
+	Brokers   string         `mapstructure:"brokers"`
+	Security  SecurityConfig `mapstructure:"security"`
+}
+
+// SecurityConfig defines security settings for Kafka connections
+type SecurityConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	Protocol      string `mapstructure:"protocol"`
+	SASLMechanism string `mapstructure:"sasl_mechanism"`
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
+	APIKey           string `mapstructure:"api_key"`
+	APISecret        string `mapstructure:"api_secret"`
+	ConnectionString *string `mapstructure:"connection_string"`
+	Kerberos         struct {
+		ServiceName string `mapstructure:"service_name"`
+	} `mapstructure:"kerberos"`
+}
+
+// ReplicationConfig defines replication parameters
+type ReplicationConfig struct {
+	BatchSize   int    `mapstructure:"batch_size"`
+	Parallelism int    `mapstructure:"parallelism"`
+	Compression string `mapstructure:"compression"`
+	JobID       string `mapstructure:"job_id"`
+}
+
+// TopicMapping defines a single source-to-target topic mapping
+type TopicMapping struct {
+	Source  string `mapstructure:"source"`
+	Target  string `mapstructure:"target"`
+	Enabled bool   `mapstructure:"enabled"`
+}
+
+// AIConfig defines AI provider settings
+type AIConfig struct {
+	Provider    string        `mapstructure:"provider"`
+	Endpoint    string        `mapstructure:"endpoint"`
+	Token       string        `mapstructure:"token"`
+	Model       string        `mapstructure:"model"`
+	Features    AIFeatures    `mapstructure:"features"`
+	SelfHealing SelfHealing `mapstructure:"self_healing"`
+}
+
+// Validate checks the configuration for basic correctness.
+func (c *Config) Validate() error {
+	if c.Server.Port == 0 {
+		return fmt.Errorf("server port must be set")
+	}
+	if len(c.Clusters) == 0 {
+		return fmt.Errorf("at least one cluster must be defined")
+	}
+	return nil
+}
+
+// AIFeatures defines which AI features are enabled
+type AIFeatures struct {
+	AnomalyDetection      bool `mapstructure:"anomaly_detection"`
+	PerformanceOptimization bool `mapstructure:"performance_optimization"`
+	IncidentAnalysis      bool `mapstructure:"incident_analysis"`
+}
+
+// SelfHealing defines automated remediation and optimization features
+type SelfHealing struct {
+	AutomatedRemediation bool `mapstructure:"automated_remediation"`
+	DynamicThrottling    bool `mapstructure:"dynamic_throttling"`
+}
+
+// MonitoringConfig defines monitoring and alerting settings
+type MonitoringConfig struct {
+	Enabled    bool                `mapstructure:"enabled"`
+	Platform   string              `mapstructure:"platform"` // "splunk", "loki", "prometheus"
+	Splunk     SplunkConfig        `mapstructure:"splunk"`
+	Loki       LokiConfig          `mapstructure:"loki"`
+	Prometheus PrometheusConfig    `mapstructure:"prometheus"`
+}
+
+// SplunkConfig defines Splunk-specific settings
+type SplunkConfig struct {
+	HECEndpoint string `mapstructure:"hec_endpoint"`
+	HECToken    string `mapstructure:"hec_token"`
+	Index       string `mapstructure:"index"`
+}
+
+// LokiConfig defines Grafana Loki-specific settings
+type LokiConfig struct {
+	Endpoint string `mapstructure:"endpoint"`
+}
+
+// PrometheusConfig defines Prometheus-specific settings
+type PrometheusConfig struct {
+	PushGateway string `mapstructure:"push_gateway"`
+}
+
+var AppConfig Config
+
+// LoadConfig loads configuration from standard paths.
+func LoadConfig() (*Config, error) {
+	viper.AddConfigPath("/etc/kaf-mirror") // Production 
+	viper.AddConfigPath(filepath.Join(utils.ProjectRoot(), "configs")) // Development 
+	viper.SetConfigName("default")
+	viper.SetConfigType("yml")
+
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	viper.SetEnvPrefix("KAF_MIRROR")
+
+	// Read the default configuration file
+	if err := viper.ReadInConfig(); err != nil {
+		return nil, err
+	}
+
+	// Merge in the production configuration file if it exists
+	viper.SetConfigName("prod")
+	if err := viper.MergeInConfig(); err != nil {
+		// Ignore if the file is not found, as it is optional
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, err
+		}
+	}
+
+	if err := viper.Unmarshal(&AppConfig); err != nil {
+		return nil, err
+	}
+
+	// Dynamically set log file path with date if not already set
+	if !strings.Contains(AppConfig.Logging.File, "20") { // Basic check for a date
+		timestamp := time.Now().Format("2006-01-02")
+		ext := filepath.Ext(AppConfig.Logging.File)
+		base := strings.TrimSuffix(AppConfig.Logging.File, ext)
+		AppConfig.Logging.File = fmt.Sprintf("%s-%s%s", base, timestamp, ext)
+	}
+
+	return &AppConfig, nil
+}

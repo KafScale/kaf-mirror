@@ -1,0 +1,26 @@
+server:
+  host: "localhost"
+  port: 8080
+  mode: "development"
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  cors:
+    allowed_origins: ["*"]
+
+logging:
+  file: "logs/kaf-mirror.log"
+  level: "INFO"   # DEBUG, INFO, WARN, ERROR
+  max_size: 100   # MB
+  max_backups: 5
+  max_age: 30     # days
+  console: false  # Set to true for development, false for production
+
+database:
+  path: "data/kaf-mirror.db"
+
+replication:
+  batch_size: 1000
+  parallelism: 4
+  compression: "none"

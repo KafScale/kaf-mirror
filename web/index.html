@@ -1,0 +1,2734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>kaf-mirror Enterprise Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-crosshair"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --background-color: #f4f7f6;
+            --card-background: #ffffff;
+            --text-color: #333;
+            --header-text-color: #ffffff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--background-color); color: var(--text-color); }
+        
+        .header { 
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%); 
+            color: var(--header-text-color); 
+            padding: 1.5rem 2rem; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.8rem; font-weight: 400; }
+        .header .user-info { display: flex; align-items: center; }
+        .header .user-info span { margin-right: 1rem; }
+        .header .logout { 
+            background: rgba(255,255,255,0.2); 
+            color: var(--header-text-color); 
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem; 
+            border-radius: 20px; 
+            cursor: pointer; 
+            transition: background 0.3s ease;
+        }
+        .header .logout:hover { background: rgba(255,255,255,0.3); }
+        
+        .nav { 
+            background: var(--card-background); 
+            padding: 0 2rem; 
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: center;
+        }
+        .nav ul { display: flex; list-style: none; }
+        .nav li { 
+            padding: 1rem 1.5rem; 
+            cursor: pointer; 
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .nav li:hover, .nav li.active { 
+            border-bottom-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .main { padding: 2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; }
+        .metrics-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 12.5px; 
+            margin: 0 25px;
+        }
+        .metrics-grid .card {
+            height: 400px; /* Fixed height for chart containers */
+        }
+        .metrics-grid .card canvas {
+            height: 300px !important; /* Ensure canvas has proper height */
+            width: 100% !important;
+        }
+        .time-range-buttons {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+        .time-range-buttons button {
+            background: #f4f7f6;
+            border: 1px solid #e0e0e0;
+            padding: 0.5rem 1rem;
+            margin: 0 0.5rem;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .time-range-buttons button.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        .card { background: var(--card-background); border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); padding: 1.5rem; }
+        .card h2 { font-size: 1.2rem; margin-bottom: 1rem; font-weight: 500; }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem; }
+        .kpi { text-align: center; }
+        .kpi h3 { font-size: 2.5rem; color: var(--primary-color); }
+        .kpi p { color: #7f8c8d; }
+        
+        .table { width: 100%; border-collapse: collapse; }
+        .table th, .table td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        .table th { background: #f8f9fa; }
+        
+        .btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        .btn:hover { background: var(--secondary-color); }
+        
+        .sub-nav { 
+            background: var(--card-background); 
+            padding: 0 1rem; 
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .sub-nav ul { display: flex; list-style: none; }
+        .sub-nav li { 
+            padding: 1rem 1.5rem; 
+            cursor: pointer; 
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+        .sub-nav li:hover, .sub-nav li.active { 
+            border-bottom-color: var(--secondary-color);
+            color: var(--secondary-color);
+        }
+        
+        .subtab-content { margin-bottom: 2rem; }
+        
+        .expandable-text { cursor: pointer; color: var(--primary-color); }
+        .expand-indicator { font-size: 0.8rem; margin-left: 0.5rem; transition: transform 0.2s; }
+        .expanded-row { background: #f8f9fa; }
+        .expanded-content { padding: 1rem; }
+        .expanded-content h4 { margin-bottom: 0.5rem; color: var(--secondary-color); }
+        .expanded-content p { margin-bottom: 1rem; line-height: 1.6; }
+        .recommendation-details { 
+            background: white; 
+            padding: 1rem; 
+            border-radius: 4px; 
+            border-left: 4px solid var(--primary-color);
+            font-size: 0.9rem;
+        }
+        .btn-small {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 0.4rem 0.8rem;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.3s ease;
+        }
+        .btn-small:hover { background: var(--primary-color); }
+        
+        #topology-view { height: 70vh; width: 100%; position: relative; }
+        #topology-animation-canvas { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
+        
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        /* Markdown Styles for AI Insights */
+        .markdown-content {
+            line-height: 1.6;
+            color: #333;
+        }
+        .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+        .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+        .markdown-content h1 { font-size: 1.5rem; border-bottom: 2px solid var(--primary-color); padding-bottom: 0.5rem; }
+        .markdown-content h2 { font-size: 1.3rem; color: var(--primary-color); }
+        .markdown-content h3 { font-size: 1.2rem; }
+        .markdown-content h4 { font-size: 1.1rem; }
+        .markdown-content p {
+            margin-bottom: 1rem;
+        }
+        .markdown-content ul, .markdown-content ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+        .markdown-content li {
+            margin-bottom: 0.5rem;
+        }
+        .markdown-content strong {
+            font-weight: 600;
+            color: var(--secondary-color);
+        }
+        .markdown-content em {
+            font-style: italic;
+            color: #666;
+        }
+        .markdown-content code {
+            background: #f1f3f4;
+            border: 1px solid #e1e5e9;
+            border-radius: 3px;
+            padding: 0.2rem 0.4rem;
+            font-family: 'Courier New', Consolas, monospace;
+            font-size: 0.9em;
+            color: #d73a49;
+        }
+        .markdown-content pre {
+            background: #f6f8fa;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .markdown-content pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #24292e;
+        }
+        .markdown-content blockquote {
+            border-left: 4px solid var(--primary-color);
+            margin: 1rem 0;
+            padding: 0.5rem 1rem;
+            background: #f8f9fa;
+            color: #6a737d;
+        }
+        .markdown-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        .markdown-content th, .markdown-content td {
+            border: 1px solid #e1e5e9;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        .markdown-content th {
+            background: #f6f8fa;
+            font-weight: 600;
+        }
+        .markdown-content hr {
+            border: none;
+            height: 2px;
+            background: var(--primary-color);
+            margin: 2rem 0;
+        }
+        
+        /* Compliance Activity Log Styling */
+        .method-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .method-badge.get { background: #e3f2fd; color: #1976d2; }
+        .method-badge.post { background: #e8f5e8; color: #388e3c; }
+        .method-badge.put { background: #fff3e0; color: #f57c00; }
+        .method-badge.delete { background: #ffebee; color: #d32f2f; }
+        .method-badge.action { background: #f3e5f5; color: #7b1fa2; }
+        
+        .status.created { background: #e8f5e8; color: #388e3c; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; }
+        .status.updated { background: #fff3e0; color: #f57c00; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; }
+        .status.deleted { background: #ffebee; color: #d32f2f; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; }
+        .status.success { background: #e3f2fd; color: #1976d2; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>kaf-mirror <span id="version" style="font-size: 0.8rem;"></span></h1>
+        <div class="user-info">
+            <span>Welcome, <span id="username">--</span></span>
+            <button class="logout" onclick="logout()">Logout</button>
+        </div>
+    </div>
+    
+    <div class="nav">
+        <ul>
+            <li class="active" data-tab="dashboard">Dashboard</li>
+            <li data-tab="jobs">Jobs</li>
+            <li data-tab="clusters">Clusters</li>
+            <li data-tab="ai-insights">AI Insights</li>
+            <li data-tab="compliance">Compliance</li>
+        </ul>
+    </div>
+    
+    <div class="main">
+        <div id="dashboard-tab" style="display: grid;">
+            <div class="card" style="margin: 0 25px 2rem 25px;">
+                <h2>Statistics</h2>
+                <div class="kpi-grid">
+                    <div class="kpi"><h3 id="total-jobs">0</h3><p>Active Jobs</p></div>
+                    <div class="kpi"><h3 id="total-throughput">0</h3><p>Current Msg/sec</p></div>
+                    <div class="kpi"><h3 id="avg-lag">0</h3><p>Avg Lag (ms)</p></div>
+                    <div class="kpi"><h3 id="error-rate">0%</h3><p>Error Rate</p></div>
+                    <div class="kpi"><h3 id="data-transferred">0</h3><p>Total Data Transferred</p></div>
+                    <div class="kpi"><h3 id="active-clusters">0</h3><p>Active Clusters</p></div>
+                    <div class="kpi"><h3 id="system-uptime">N/A</h3><p>System Uptime</p></div>
+                    <div class="kpi"><h3 id="health-trend">--</h3><p>Health Trend</p></div>
+                </div>
+            </div>
+            <div class="metrics-grid">
+                <div class="card">
+                    <h2>Throughput</h2>
+                    <div class="time-range-buttons">
+                        <button class="active" data-range="2h">2h</button>
+                        <button data-range="24h">24h</button>
+                        <button data-range="7d">7d</button>
+                        <button data-range="30d">30d</button>
+                    </div>
+                    <canvas id="throughput-chart"></canvas>
+                </div>
+                <div class="card">
+                    <h2>Latency</h2>
+                    <div class="time-range-buttons">
+                        <button class="active" data-range="2h">2h</button>
+                        <button data-range="24h">24h</button>
+                        <button data-range="7d">7d</button>
+                        <button data-range="30d">30d</button>
+                    </div>
+                    <canvas id="latency-chart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div id="jobs-tab" class="grid" style="display: none;">
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Replication Jobs</h2>
+                <table class="table" id="jobs-table">
+                    <thead><tr><th>Job</th><th>Status</th><th>Last Active</th><th>Source</th><th>Target</th><th>Details</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Recovery & Mirror State</h2>
+                <p class="muted">Latest per-job mirror state, safe resume points, and detected gaps.</p>
+                <table class="table" id="recovery-table">
+                    <thead>
+                        <tr>
+                            <th>Job</th>
+                            <th>Partitions Tracked</th>
+                            <th>Completed</th>
+                            <th>Open Gaps</th>
+                            <th>Max Lag</th>
+                            <th>Last Resume Point</th>
+                            <th>Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="clusters-tab" class="grid" style="display: none;">
+            <div class="card" style="grid-column: 1 / -1;">
+                <h2>Cluster Topology</h2>
+                <div id="topology-view"></div>
+            </div>
+        </div>
+        
+        <div id="ai-insights-tab" style="display: none;">
+            <div class="card" style="margin: 0 0 2rem 0;">
+                <h2>AI Enhanced Insights</h2>
+                <div class="kpi-grid">
+                    <div class="kpi"><h3 id="ai-insights-count">0</h3><p>Total Insights</p></div>
+                    <div class="kpi"><h3 id="ai-anomalies-count">0</h3><p>Anomalies Detected</p></div>
+                    <div class="kpi"><h3 id="ai-recommendations-count">0</h3><p>Recommendations</p></div>
+                    <div class="kpi"><h3 id="ai-response-time">N/A</h3><p>Avg Response Time</p></div>
+                </div>
+            </div>
+            
+            <div class="sub-nav">
+                <ul>
+                    <li class="active" data-subtab="all-insights">All Insights</li>
+                    <li data-subtab="anomalies">Anomaly Detection</li>
+                    <li data-subtab="recommendations">Performance Recommendations</li>
+                    <li data-subtab="incident-analysis">Incident Analysis</li>
+                </ul>
+            </div>
+            
+            <div id="all-insights-subtab" class="subtab-content">
+                <div class="card">
+                    <h2>Recent AI Insights</h2>
+                    <table class="table" id="insights-table">
+                        <thead><tr><th>Type</th><th>Severity</th><th>Job</th><th>Recommendation</th><th>Time</th><th>Status</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="anomalies-subtab" class="subtab-content" style="display: none;">
+                <div class="card">
+                    <h2>Detected Anomalies</h2>
+                    <table class="table" id="anomalies-table">
+                        <thead><tr><th>Job</th><th>Anomaly Type</th><th>Description</th><th>Severity</th><th>Detected</th><th>Status</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="recommendations-subtab" class="subtab-content" style="display: none;">
+                <div class="card">
+                    <h2>Performance Optimization Recommendations</h2>
+                    <table class="table" id="recommendations-table">
+                        <thead><tr><th>Job</th><th>Category</th><th>Recommendation</th><th>Priority</th><th>Impact</th><th>Action</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="incident-analysis-subtab" class="subtab-content" style="display: none;">
+                <div class="card">
+                    <h2>AI-Powered Incident Analysis</h2>
+                    <table class="table" id="incident-analysis-table">
+                        <thead><tr><th>Event</th><th>Analysis</th><th>Root Cause</th><th>Resolution</th><th>Timestamp</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div id="compliance-tab" style="display: none;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 2rem;">
+                <div class="card">
+                    <h2>Compliance Reports</h2>
+                    <button class="btn" onclick="generateComplianceReport('daily')">Daily Report</button>
+                    <button class="btn" onclick="generateComplianceReport('weekly')">Weekly Report</button>
+                    <button class="btn" onclick="generateComplianceReport('monthly')">Monthly Report</button>
+                </div>
+                <div class="card">
+                    <h2>Access Control</h2>
+                    <table class="table" id="access-table">
+                        <thead><tr><th>User</th><th>Role</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <h2>System Activity Logs</h2>
+                <table class="table" id="activity-logs-table">
+                    <thead><tr><th>Timestamp</th><th>User</th><th>Action</th><th>Resource</th><th>Status</th><th>Details</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>© Scalytics, <a href="https://www.scalytics.io" target="_blank">www.scalytics.io</a> | <a href="/docu/index.html" target="_blank">Documentation</a></p>
+    </footer>
+    <script>
+        let appState = {
+            jobs: [],
+            clusters: [],
+            metrics: [],
+            health: null,
+            insights: [],
+            expandedInsights: new Set(),
+            expandedAnomalies: new Set(),
+            expandedRecommendations: new Set(),
+            expandedIncidents: new Set(),
+            expandedJobs: new Set()
+        };
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setupAuth();
+            setupTabs();
+            setupTimeRangeButtons();
+            loadData();
+            loadVersion();
+            
+            // Set up automatic data refresh every 30 seconds
+            setInterval(() => {
+                const activeRange = document.querySelector('.time-range-buttons button.active').dataset.range || '2h';
+                loadData(activeRange);
+            }, 30000);
+        });
+
+        function setupAuth() {
+            const token = sessionStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+
+            validateToken().then(user => {
+                if (!user) {
+                    logout();
+                    return;
+                }
+                
+                document.getElementById('username').textContent = user.username;
+                sessionStorage.setItem('username', user.username);
+                sessionStorage.setItem('user_role', user.role);
+
+                if (user.role === 'compliance') {
+                    document.querySelector('[data-tab="jobs"]').style.display = 'none';
+                    document.querySelector('[data-tab="clusters"]').style.display = 'none';
+                    document.querySelector('[data-tab="ai-insights"]').style.display = 'none';
+                }
+            }).catch(err => {
+                console.error('Token validation failed:', err);
+                logout();
+            });
+        }
+
+        function validateToken() {
+            return fetch('/auth/me', {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Token validation failed');
+                }
+                return response.json();
+            });
+        }
+
+        function setupTabs() {
+            document.querySelectorAll('.nav li').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const tabName = this.dataset.tab;
+                    document.querySelectorAll('.nav li').forEach(li => li.classList.remove('active'));
+                    this.classList.add('active');
+                    document.querySelectorAll('.main > div').forEach(div => div.style.display = 'none');
+                    document.getElementById(`${tabName}-tab`).style.display = tabName === 'ai-insights' ? 'block' : 'grid';
+                    
+                    // Render topology only when its tab is visible
+                    if (tabName === 'clusters') {
+                        renderTopology(appState.jobs, appState.clusters);
+                    }
+                });
+            });
+            
+            document.querySelectorAll('.sub-nav li').forEach(subtab => {
+                subtab.addEventListener('click', function() {
+                    const subtabName = this.dataset.subtab;
+                    document.querySelectorAll('.sub-nav li').forEach(li => li.classList.remove('active'));
+                    this.classList.add('active');
+                    document.querySelectorAll('.subtab-content').forEach(div => div.style.display = 'none');
+                    document.getElementById(`${subtabName}-subtab`).style.display = 'block';
+                });
+            });
+        }
+
+        function setupTimeRangeButtons() {
+            document.querySelectorAll('.time-range-buttons button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const range = this.dataset.range;
+                    
+                    // Update active state for all button groups
+                    document.querySelectorAll('.time-range-buttons').forEach(group => {
+                        group.querySelectorAll('button').forEach(btn => {
+                            btn.classList.remove('active');
+                            if (btn.dataset.range === range) {
+                                btn.classList.add('active');
+                            }
+                        });
+                    });
+                    
+                    loadChartData(range);
+                });
+            });
+        }
+
+        function loadChartData(timeRange) {
+            loadAllJobMetrics(appState.jobs, timeRange)
+                .then(metrics => {
+                    appState.metrics = metrics;
+                    renderCharts(metrics, appState.jobs, timeRange);
+                });
+        }
+
+        function loadData(timeRange = '2h') {
+            Promise.all([
+                loadClusters(),
+                loadJobs(),
+                loadSystemHealth()
+            ]).then(([clusters, jobs, health]) => {
+                appState.clusters = clusters;
+                appState.jobs = jobs;
+                appState.health = health;
+                
+                // After initial data is loaded, fetch metrics for all jobs
+                return loadAllJobMetrics(jobs, timeRange);
+            }).then(metrics => {
+                appState.metrics = metrics;
+                
+                // Update all tabs with fresh data
+                updateSummaryMetrics(appState.jobs, appState.metrics, appState.clusters, appState.health);
+                updateJobsTable(appState.jobs);
+                loadRecoveryState(appState.jobs);
+                renderCharts(appState.metrics, appState.jobs, timeRange);
+                
+                // Update clusters topology if user is currently viewing clusters tab
+                const activeTab = document.querySelector('.nav li.active');
+                if (activeTab && activeTab.dataset.tab === 'clusters') {
+                    renderTopology(appState.jobs, appState.clusters);
+                }
+                
+                return Promise.all([
+                    loadUsers(),
+                    loadAIInsights(),
+                    loadActivityLogs()
+                ]);
+            }).catch(err => {
+                console.error('Failed to load dashboard data:', err);
+                updateSummaryMetrics([], [], [], null);
+                updateJobsTable([]);
+                renderRecoveryTable([]);
+                renderTopology([], []);
+                renderCharts([], [], '2h');
+            });
+        }
+
+        async function loadRecoveryState(jobs) {
+            const token = sessionStorage.getItem('token');
+            if (!token || !jobs || jobs.length === 0) {
+                renderRecoveryTable([]);
+                return;
+            }
+
+            const recoveryPromises = jobs.map(job => {
+                return fetch(`/api/v1/jobs/${job.id}/mirror/state?period=today`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }).then(resp => {
+                    if (!resp.ok) {
+                        throw new Error(`Failed to fetch mirror state for job ${job.name}`);
+                    }
+                    return resp.json().then(data => ({ job, data }));
+                }).catch(err => {
+                    console.error(err);
+                    return { job, data: null };
+                });
+            });
+
+            const recoveryData = await Promise.all(recoveryPromises);
+            renderRecoveryTable(recoveryData);
+        }
+
+        function renderRecoveryTable(recoveryData) {
+            const tbody = document.querySelector('#recovery-table tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            recoveryData.forEach(entry => {
+                const { job, data } = entry;
+                const row = document.createElement('tr');
+
+                if (!data) {
+                    row.innerHTML = `<td>${job.name}</td><td colspan="6">No mirror state available</td>`;
+                    tbody.appendChild(row);
+                    return;
+                }
+
+                const mirrorProgress = data.mirror_progress || data.mirrorProgress || [];
+                const resumePoints = data.resume_points || data.resumePoints || [];
+                const mirrorGaps = data.mirror_gaps || data.mirrorGaps || [];
+
+                const partitionsTracked = mirrorProgress.length;
+                const completed = mirrorProgress.filter(mp => mp.status === 'completed').length;
+                const openGaps = mirrorGaps.length;
+                const maxLag = mirrorProgress.reduce((max, mp) => Math.max(max, mp.replication_lag || 0), 0);
+
+                let lastResume = '—';
+                if (resumePoints.length > 0) {
+                    const latestRP = resumePoints.reduce((latest, rp) => {
+                        return !latest || new Date(rp.calculated_at) > new Date(latest.calculated_at) ? rp : latest;
+                    }, null);
+                    if (latestRP) {
+                        lastResume = `${latestRP.source_topic || ''} p${latestRP.partition_id || ''} @ ${latestRP.safe_resume_offset || 0}`;
+                    }
+                }
+
+                let lastUpdated = '—';
+                if (mirrorProgress.length > 0) {
+                    const latestMP = mirrorProgress.reduce((latest, mp) => {
+                        return !latest || new Date(mp.last_updated) > new Date(latest.last_updated) ? mp : latest;
+                    }, null);
+                    if (latestMP) {
+                        lastUpdated = new Date(latestMP.last_updated).toLocaleString();
+                    }
+                }
+
+                row.innerHTML = `
+                    <td>${job.name}</td>
+                    <td>${partitionsTracked}</td>
+                    <td>${completed}</td>
+                    <td class="${openGaps > 0 ? 'status-failed' : ''}">${openGaps}</td>
+                    <td>${maxLag}</td>
+                    <td>${lastResume}</td>
+                    <td>${lastUpdated}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function loadClusters() {
+            const token = sessionStorage.getItem('token');
+            
+            return fetch('/api/v1/clusters', {
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch clusters: ${response.status} ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(clusters => {
+                return clusters.map(cluster => ({
+                    ...cluster,
+                    api_key: cluster.api_key ? '***MASKED***' : cluster.api_key,
+                    api_secret: cluster.api_secret ? '***MASKED***' : cluster.api_secret,
+                    security_config: cluster.security_config ? '***MASKED***' : cluster.security_config
+                }));
+            })
+            .catch(err => {
+                console.error('Error fetching clusters:', err);
+                return [];
+            });
+        }
+
+        function loadJobs() {
+            return fetch('/api/v1/jobs', {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch jobs');
+                return response.json();
+            })
+            .then(jobs => {
+                return Array.isArray(jobs) ? jobs : [];
+            })
+            .catch(err => {
+                console.error('Error fetching jobs:', err);
+                return [];
+            });
+        }
+
+        function loadAllJobMetrics(jobs, timeRange = '2h') {
+            const runningJobs = jobs.filter(j => j.status === 'running' || j.status === 'active');
+            if (runningJobs.length === 0) {
+                return Promise.resolve([]);
+            }
+
+            const metricPromises = runningJobs.map(job =>
+                fetch(`/api/v1/jobs/${job.id}/metrics/history?range=${timeRange}`, {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                })
+                .then(response => {
+                    if (!response.ok) return [];
+                    return response.json();
+                })
+                .then(metrics => ({
+                    jobId: job.id,
+                    jobName: job.name,
+                    metrics: Array.isArray(metrics) ? metrics : []
+                }))
+                .catch(err => {
+                    console.error(`Error fetching metrics for job ${job.id}:`, err);
+                    return { jobId: job.id, jobName: job.name, metrics: [] };
+                })
+            );
+
+            return Promise.all(metricPromises);
+        }
+
+        function loadUsers() {
+            fetch('/api/v1/users', {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch users');
+                return response.json();
+            })
+            .then(users => {
+                updateAccessTable(Array.isArray(users) ? users : []);
+            })
+            .catch(err => {
+                console.error('Error loading users:', err);
+                updateAccessTable([]);
+            });
+        }
+
+        function loadAIInsights() {
+            const userRole = sessionStorage.getItem('user_role');
+            if (userRole === 'compliance') return;
+
+            // Load both insights and metrics
+            Promise.all([
+                fetch('/api/v1/ai/insights?limit=10', {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                }),
+                fetch('/api/v1/ai/metrics', {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                })
+            ])
+            .then(([insightsResponse, metricsResponse]) => {
+                const promises = [];
+                
+                if (insightsResponse.ok) {
+                    promises.push(insightsResponse.json());
+                } else {
+                    console.error('AI Insights API error:', insightsResponse.status, insightsResponse.statusText);
+                    promises.push([]);
+                }
+                
+                if (metricsResponse.ok) {
+                    promises.push(metricsResponse.json());
+                } else {
+                    console.error('AI Metrics API error:', metricsResponse.status, metricsResponse.statusText);
+                    promises.push(null);
+                }
+                
+                return Promise.all(promises);
+            })
+            .then(([insights, metrics]) => {
+                console.log('AI Insights loaded:', insights.length, 'insights');
+                appState.insights = Array.isArray(insights) ? insights : [];
+                appState.aiMetrics = metrics;
+                updateAIInsightsDisplay(appState.insights, metrics);
+            })
+            .catch(err => {
+                console.error('Error loading AI insights:', err);
+                updateAIInsightsDisplay([], null);
+            });
+        }
+
+        function updateAIInsightsDisplay(insights, metrics) {
+            const safeInsights = Array.isArray(insights) ? insights : [];
+            updateAIInsightsTable(safeInsights);
+            
+            
+            const anomalies = safeInsights.filter(i => i.insight_type === 'anomaly');
+            const recommendations = safeInsights.filter(i => 
+                i.insight_type === 'recommendation' || 
+                i.insight_type === 'optimization' || 
+                i.insight_type === 'enhanced_analysis' || 
+                i.insight_type === 'fallback_analysis' ||
+                i.insight_type === 'historical_trend'
+            );
+            const incidents = safeInsights.filter(i => i.insight_type === 'incident_report' || i.insight_type === 'incident_analysis');
+            
+            console.log('Filtered anomalies:', anomalies.length, anomalies.map(a => a.insight_type));
+            console.log('Filtered recommendations:', recommendations.length, recommendations.map(r => r.insight_type));
+            console.log('Filtered incidents:', incidents.length, incidents.map(i => i.insight_type));
+            
+            document.getElementById('ai-insights-count').textContent = safeInsights.length;
+            document.getElementById('ai-anomalies-count').textContent = anomalies.length;
+            document.getElementById('ai-recommendations-count').textContent = recommendations.length;
+            
+            // Update AI performance metrics
+            if (metrics) {
+                document.getElementById('ai-response-time').textContent = metrics.avg_response_time_ms ? formatResponseTime(metrics.avg_response_time_ms) : 'N/A';
+            } else {
+                document.getElementById('ai-response-time').textContent = 'N/A';
+            }
+            
+            updateAnomaliesTable(anomalies);
+            updateRecommendationsTable(recommendations);
+            updateIncidentAnalysisTable(incidents);
+        }
+
+        function updateAIInsightsTable(insights) {
+            const tbody = document.querySelector('#insights-table tbody');
+            const recentInsights = insights.slice(-10);
+            tbody.innerHTML = recentInsights.map((insight, index) => {
+                const isExpanded = appState.expandedInsights.has(index);
+                
+                let jobName = 'System';
+                
+                if (appState.jobs && appState.jobs.length > 0 && insight.job_id) {
+                    const job = appState.jobs.find(j => 
+                        j.id === insight.job_id || String(j.id) === String(insight.job_id)
+                    );
+                    if (job) {
+                        jobName = job.name || 'Unnamed Job';
+                    } else {
+                        const shortId = String(insight.job_id).substring(0, 8);
+                        jobName = `Job-${shortId}`;
+                    }
+                }
+                return `
+                <tr data-insight-id="${index}">
+                    <td><span class="badge ${insight.insight_type}">${insight.insight_type}</span></td>
+                    <td><span class="severity ${insight.severity_level}">${insight.severity_level}</span></td>
+                    <td>${jobName}</td>
+                    <td class="expandable-text" onclick="toggleInsight(${index})">${insight.recommendation.substring(0, 80)}... <span class="expand-indicator" style="transform: ${isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span></td>
+                    <td>${new Date(insight.timestamp).toLocaleString()}</td>
+                    <td><span class="status ${insight.resolution_status}">${insight.resolution_status}</span></td>
+                </tr>
+                <tr id="expanded-insight-${index}" class="expanded-row" style="display: ${isExpanded ? 'table-row' : 'none'};">
+                    <td colspan="6">
+                        <div class="expanded-content">
+                            <h4>Full Insight:</h4>
+                            <div class="markdown-content">${marked.parse(insight.recommendation)}</div>
+                            <div class="recommendation-details">
+                                <strong>AI Provider:</strong> ${getProviderFromModel(insight.ai_model)}<br>
+                                <strong>Insight Type:</strong> ${insight.insight_type}<br>
+                                <strong>Generated:</strong> ${new Date(insight.timestamp).toLocaleString()}<br>
+                                <strong>Status:</strong> ${insight.resolution_status}<br>
+                                <strong>Severity:</strong> ${insight.severity_level}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function updateAnomaliesTable(anomalies) {
+            const tbody = document.querySelector('#anomalies-table tbody');
+            tbody.innerHTML = anomalies.map((anomaly, index) => {
+                const isExpanded = appState.expandedAnomalies.has(index);
+                
+                let jobName = 'System';
+                
+                if (appState.jobs && appState.jobs.length > 0 && anomaly.job_id) {
+                    const job = appState.jobs.find(j => 
+                        j.id === anomaly.job_id || String(j.id) === String(anomaly.job_id)
+                    );
+                    if (job) {
+                        jobName = job.name || 'Unnamed Job';
+                    } else {
+                        const shortId = String(anomaly.job_id).substring(0, 8);
+                        jobName = `Job-${shortId}`;
+                    }
+                }
+                return `
+                <tr data-anomaly-id="${index}">
+                    <td>${jobName}</td>
+                    <td>${anomaly.insight_type}</td>
+                    <td class="expandable-text" onclick="toggleAnomaly(${index})">${anomaly.recommendation.substring(0, 60)}... <span class="expand-indicator" style="transform: ${isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span></td>
+                    <td><span class="severity ${anomaly.severity_level}">${anomaly.severity_level}</span></td>
+                    <td>${new Date(anomaly.timestamp).toLocaleString()}</td>
+                    <td><span class="status ${anomaly.resolution_status}">${anomaly.resolution_status}</span></td>
+                </tr>
+                <tr id="expanded-anomaly-${index}" class="expanded-row" style="display: ${isExpanded ? 'table-row' : 'none'};">
+                    <td colspan="6">
+                        <div class="expanded-content">
+                            <h4>Anomaly Analysis:</h4>
+                            <div class="markdown-content">${marked.parse(anomaly.recommendation)}</div>
+                            <div class="recommendation-details">
+                                <strong>AI Model:</strong> ${anomaly.ai_model}<br>
+                                <strong>Anomaly Type:</strong> ${anomaly.insight_type}<br>
+                                <strong>Job Context:</strong> ${anomaly.job_id || 'System-wide'}<br>
+                                <strong>Detected:</strong> ${new Date(anomaly.timestamp).toLocaleString()}<br>
+                                <strong>Severity:</strong> ${anomaly.severity_level}<br>
+                                <strong>Status:</strong> ${anomaly.resolution_status}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function updateRecommendationsTable(recommendations) {
+            const tbody = document.querySelector('#recommendations-table tbody');
+            tbody.innerHTML = recommendations.map((rec, index) => {
+                const isExpanded = appState.expandedRecommendations.has(index);
+                
+                let jobName = 'System';
+                
+                if (appState.jobs && appState.jobs.length > 0 && rec.job_id) {
+                    const job = appState.jobs.find(j => 
+                        j.id === rec.job_id || String(j.id) === String(rec.job_id)
+                    );
+                    if (job) {
+                        jobName = job.name || 'Unnamed Job';
+                    } else {
+                        const shortId = String(rec.job_id).substring(0, 8);
+                        jobName = `Job-${shortId}`;
+                    }
+                }
+                return `
+                <tr data-recommendation-id="${index}">
+                    <td>${jobName}</td>
+                    <td>${rec.insight_type}</td>
+                    <td class="expandable-text" onclick="toggleRecommendation(${index})">${rec.recommendation.substring(0, 70)}... <span class="expand-indicator" style="transform: ${isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span></td>
+                    <td><span class="priority ${rec.severity_level}">${rec.severity_level}</span></td>
+                    <td>Medium</td>
+                    <td>--</td>
+                </tr>
+                <tr id="expanded-${index}" class="expanded-row" style="display: ${isExpanded ? 'table-row' : 'none'};">
+                    <td colspan="6">
+                        <div class="expanded-content">
+                            <h4>Full Recommendation:</h4>
+                            <div class="markdown-content">${marked.parse(rec.recommendation)}</div>
+                            <div class="recommendation-details">
+                                <strong>AI Model:</strong> ${rec.ai_model}<br>
+                                <strong>Generated:</strong> ${new Date(rec.timestamp).toLocaleString()}<br>
+                                <strong>Status:</strong> ${rec.resolution_status}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function updateIncidentAnalysisTable(incidents) {
+            const tbody = document.querySelector('#incident-analysis-table tbody');
+            tbody.innerHTML = incidents.map((incident, index) => {
+                const isExpanded = appState.expandedIncidents.has(index);
+                return `
+                <tr data-incident-id="${index}">
+                    <td>System Alert</td>
+                    <td class="expandable-text" onclick="toggleIncident(${index})">${incident.recommendation.substring(0, 60)}... <span class="expand-indicator" style="transform: ${isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'};">▼</span></td>
+                    <td>Network Partition</td>
+                    <td>Automatic Failover</td>
+                    <td>${new Date(incident.timestamp).toLocaleString()}</td>
+                </tr>
+                <tr id="expanded-incident-${index}" class="expanded-row" style="display: ${isExpanded ? 'table-row' : 'none'};">
+                    <td colspan="5">
+                        <div class="expanded-content">
+                            <h4>Complete Incident Analysis:</h4>
+                            <div class="markdown-content">${marked.parse(incident.recommendation)}</div>
+                            <div class="recommendation-details">
+                                <strong>AI Model:</strong> ${incident.ai_model}<br>
+                                <strong>Analysis Type:</strong> ${incident.insight_type}<br>
+                                <strong>System Context:</strong> ${incident.job_id || 'System-wide incident'}<br>
+                                <strong>Analyzed:</strong> ${new Date(incident.timestamp).toLocaleString()}<br>
+                                <strong>Severity:</strong> ${incident.severity_level}<br>
+                                <strong>Resolution Status:</strong> ${incident.resolution_status}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        function loadSystemHealth() {
+            return fetch('/health')
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch health');
+                return response.json();
+            })
+            .catch(err => {
+                console.error('Error fetching system health:', err);
+                return null;
+            });
+        }
+
+        function updateSummaryMetrics(jobs = [], jobMetrics = [], clusters = [], health = null) {
+            const activeJobs = jobs.filter(j => j.status === 'running' || j.status === 'active');
+            document.getElementById('total-jobs').textContent = activeJobs.length;
+            
+            const allMetrics = jobMetrics.flatMap(jm => jm.metrics);
+
+            if (allMetrics.length > 0) {
+                const anomalies = appState.insights.filter(i => i.insight_type === 'anomaly');
+                const trend = anomalies.length > 5 ? "Degrading" : "Stable";
+                document.getElementById('health-trend').textContent = trend;
+                
+                const totalMsgPerSec = jobMetrics.reduce((sum, jm) => {
+                    if (!jm.metrics || jm.metrics.length === 0) {
+                        return sum;
+                    }
+                    const totalMessages = jm.metrics.reduce((s, m) => s + m.messages_replicated_delta, 0);
+                    const timeDelta = (new Date(jm.metrics[jm.metrics.length - 1].timestamp).getTime() - new Date(jm.metrics[0].timestamp).getTime()) / 1000;
+                    if (timeDelta === 0) {
+                        return sum;
+                    }
+                    return sum + (totalMessages / timeDelta);
+                }, 0);
+                document.getElementById('total-throughput').textContent = Math.round(Math.max(0, totalMsgPerSec)).toLocaleString();
+
+                // Calculate average lag from the most recent metric of each job
+                const lags = jobMetrics.map(jm => jm.metrics.length > 0 ? jm.metrics[jm.metrics.length - 1].avg_lag || 0 : 0);
+                const avgLag = lags.length > 0 ? Math.round(lags.reduce((a, b) => a + b, 0) / lags.length) : 0;
+                document.getElementById('avg-lag').textContent = avgLag;
+                
+                const jobPromises = activeJobs.map(job => 
+                    fetch(`/api/v1/jobs/${job.id}/metrics/current`, {
+                        headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                    })
+                    .then(response => response.ok ? response.json() : {bytes_transferred: 0})
+                    .catch(() => ({bytes_transferred: 0}))
+                );
+                
+                Promise.all(jobPromises).then(allCurrentMetrics => {
+                    const totalBytes = allCurrentMetrics.reduce((sum, metrics) => sum + (metrics.bytes_transferred || 0), 0);
+                    document.getElementById('data-transferred').textContent = formatBytes(totalBytes);
+                });
+                
+                const totalErrors = allMetrics.reduce((sum, m) => sum + (m.error_count_delta || 0), 0);
+                const totalMessages = allMetrics.reduce((sum, m) => sum + (m.messages_replicated_delta || 0), 0);
+                const errorRate = totalMessages > 0 ? ((totalErrors / totalMessages) * 100).toFixed(2) : 0;
+                document.getElementById('error-rate').textContent = `${errorRate}%`;
+            }
+            
+            const activeClusters = clusters.filter(c => c.status === 'active');
+            document.getElementById('active-clusters').textContent = activeClusters.length;
+            
+            if (health && health.uptime) {
+                const uptimeSeconds = parseInt(health.uptime);
+                const days = Math.floor(uptimeSeconds / (24 * 60 * 60));
+                const hours = Math.floor((uptimeSeconds % (24 * 60 * 60)) / (60 * 60));
+                const minutes = Math.floor((uptimeSeconds % (60 * 60)) / 60);
+                if (days > 0) {
+                    document.getElementById('system-uptime').textContent = `${days}d ${hours}h`;
+                } else if (hours > 0) {
+                    document.getElementById('system-uptime').textContent = `${hours}h ${minutes}m`;
+                } else {
+                    document.getElementById('system-uptime').textContent = `${minutes}m`;
+                }
+            } else {
+                document.getElementById('system-uptime').textContent = 'N/A';
+            }
+        }
+
+        function updateJobsTable(jobs) {
+            const tbody = document.querySelector('#jobs-table tbody');
+            
+            if (jobs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 2rem; color: #7f8c8d;">
+                            <em>No replication jobs found. <br>
+                            Use the CLI to create your first job: <code>mirror-cli jobs add</code></em>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // Get current metrics for all jobs to determine last active time
+            const jobPromises = jobs.map(job => 
+                fetch(`/api/v1/jobs/${job.id}/metrics/current`, {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                })
+                .then(response => response.ok ? response.json() : null)
+                .catch(() => null)
+                .then(metrics => ({
+                    ...job,
+                    lastActiveTime: metrics ? metrics.timestamp : null
+                }))
+            );
+            
+            Promise.all(jobPromises).then(jobsWithMetrics => {
+                tbody.innerHTML = jobsWithMetrics.map((job, index) => {
+                    let lastActive = "Never";
+                    if (job.status === 'active' && job.lastActiveTime) {
+                        const lastTime = new Date(job.lastActiveTime);
+                        lastActive = formatLastActive(lastTime);
+                    } else if (job.status === 'paused') {
+                        lastActive = "Paused";
+                    }
+                    
+                    return `
+                        <tr data-job-id="${index}">
+                            <td>${job.name || 'Unnamed Job'}</td>
+                            <td><span class="status ${job.status || 'unknown'}">${job.status || 'Unknown'}</span></td>
+                            <td>${lastActive}</td>
+                            <td>${job.source_cluster_name || 'Unknown'}</td>
+                            <td>${job.target_cluster_name || 'Unknown'}</td>
+                            <td class="expandable-text" onclick="toggleJob(${index}, '${job.id}')">View Details <span class="expand-indicator">▼</span></td>
+                        </tr>
+                        <tr id="expanded-job-${index}" class="expanded-row" style="display: none;">
+                            <td colspan="6">
+                                <div class="expanded-content">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2rem; margin-bottom: 1rem;">
+                                        <!-- Column 1: Job Configuration & Current Metrics -->
+                                        <div>
+                                            <h4 style="color: var(--primary-color); margin-bottom: 1rem;">📊 Configuration & Metrics</h4>
+                                            <div class="recommendation-details" style="margin-bottom: 1rem;">
+                                                <strong>Job ID:</strong> ${job.id || 'N/A'}<br>
+                                                <strong>Created:</strong> ${job.created_at ? new Date(job.created_at).toLocaleString() : 'N/A'}<br>
+                                                <strong>Batch Size:</strong> ${job.batch_size || 1000} messages<br>
+                                                <strong>Parallelism:</strong> ${job.parallelism || 4} threads<br>
+                                                <strong>Compression:</strong> ${job.compression || 'none'}<br>
+                                                <strong>Preserve Partitions:</strong> ${job.preserve_partitions ? 'Yes' : 'No'}<br>
+                                                <strong>Source -> Target:</strong> ${job.source_cluster_name} -> ${job.target_cluster_name}
+                                            </div>
+                                            <div id="job-metrics-${index}" class="recommendation-details">
+                                                <em>Loading current metrics...</em>
+                                            </div>
+                                            <div style="margin-top: 1rem;" id="analysis-buttons-${index}">
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Column 2: Mirror State & Recovery -->
+                                        <div>
+                                            <h4 style="color: var(--secondary-color); margin-bottom: 1rem;">🔄 Mirror State & Recovery</h4>
+                                            <div id="mirror-state-${index}" class="recommendation-details">
+                                                <em>Loading mirror state...</em>
+                                            </div>
+                                            <button class="btn-small" onclick="refreshMirrorState(${index}, '${job.id}')" style="margin-top: 1rem;">Refresh State</button>
+                                        </div>
+                                        
+                                        <!-- Column 3: Inventory Snapshots -->
+                                        <div>
+                                            <h4 style="color: var(--primary-color); margin-bottom: 1rem;">📋 Topic Inventory</h4>
+                                            <div id="inventory-snapshots-${index}" class="recommendation-details">
+                                                <em>Loading inventory...</em>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                const userRole = localStorage.getItem('user_role');
+                if (userRole === 'admin' || userRole === 'operator') {
+                    jobsWithMetrics.forEach((job, index) => {
+                        const buttonContainer = document.getElementById(`analysis-buttons-${index}`);
+                        if (buttonContainer) {
+                            buttonContainer.innerHTML = `
+                                <button class="btn-small" onclick="triggerAnalysis('${job.id}', '7d')">Analyze 7 Days</button>
+                                <button class="btn-small" onclick="triggerAnalysis('${job.id}', '30d')">Analyze 30 Days</button>
+                            `;
+                        }
+                    });
+                }
+                
+                // Restore expanded state for previously expanded jobs
+                jobsWithMetrics.forEach((job, index) => {
+                    if (appState.expandedJobs.has(job.id)) {
+                        const expandedRow = document.getElementById(`expanded-job-${index}`);
+                        const indicator = document.querySelector(`[data-job-id="${index}"] .expand-indicator`);
+                        if (expandedRow && indicator) {
+                            expandedRow.style.display = 'table-row';
+                            indicator.style.transform = 'rotate(180deg)';
+                            // Reload the data for the expanded job
+                            loadJobMetrics(index, job.id);
+                            loadMirrorState(index, job.id);
+                            loadInventorySnapshots(index, job.id);
+                        }
+                    }
+                });
+            });
+        }
+
+        function toggleJob(index, jobId) {
+            const expandedRow = document.getElementById(`expanded-job-${index}`);
+            const indicator = document.querySelector(`[data-job-id="${index}"] .expand-indicator`);
+            
+            if (expandedRow.style.display === 'none') {
+                expandedRow.style.display = 'table-row';
+                indicator.style.transform = 'rotate(180deg)';
+                appState.expandedJobs.add(jobId);
+                loadJobMetrics(index, jobId);
+                loadMirrorState(index, jobId);
+                loadInventorySnapshots(index, jobId);
+            } else {
+                expandedRow.style.display = 'none';
+                indicator.style.transform = 'rotate(0deg)';
+                appState.expandedJobs.delete(jobId);
+            }
+        }
+
+        function loadJobMetrics(index, jobId) {
+            const metricsContainer = document.getElementById(`job-metrics-${index}`);
+            const statusContainer = document.getElementById(`job-status-${index}`);
+            
+            fetch(`/api/v1/jobs/${jobId}/metrics/current`, {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('No current metrics available');
+                }
+                return response.json();
+            })
+            .then(metrics => {
+                metricsContainer.innerHTML = `
+                    <strong>Current Performance:</strong><br>
+                    • Messages Replicated Since Start: ${metrics.messages_replicated || 0}<br>
+                    • Bytes Transferred Since Start: ${formatBytes(metrics.bytes_transferred || 0)}<br>
+                    • Current Lag: ${metrics.current_lag || 0} messages<br>
+                    • Error Count: ${metrics.error_count || 0}<br>
+                    • Last Updated: ${new Date(metrics.timestamp).toLocaleString()}
+                `;
+                if (statusContainer) {
+                    statusContainer.innerHTML = `
+                        <strong>Job Status:</strong><br>
+                        <span class="status ${appState.jobs[index].status || 'unknown'}">${appState.jobs[index].status || 'Unknown'}</span>
+                    `;
+                }
+            })
+            .catch(err => {
+                console.error('Error loading job metrics:', err);
+                metricsContainer.innerHTML = `
+                    <strong>Current Performance:</strong><br>
+                    <em>No metrics available yet. Job may be starting or paused.</em>
+                `;
+                if (statusContainer) {
+                    statusContainer.innerHTML = `
+                        <strong>Job Status:</strong><br>
+                        <span class="status ${appState.jobs[index].status || 'unknown'}">${appState.jobs[index].status || 'Unknown'}</span>
+                    `;
+                }
+            });
+        }
+
+        function loadMirrorState(index, jobId) {
+            const mirrorContainer = document.getElementById(`mirror-state-${index}`);
+            
+            // Show loading state with timestamp
+            mirrorContainer.innerHTML = '<strong>Mirror Recovery Status:</strong><br><em>🔄 Loading mirror state data...</em>';
+            
+            // Use the fast comprehensive mirror/state endpoint first
+            fetch(`/api/v1/jobs/${jobId}/mirror/state`, {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => response.ok ? response.json() : null)
+            .then(state => {
+                if (!state || state.job_id !== jobId) {
+                    // If no state data yet, show initializing message
+                    mirrorContainer.innerHTML = `
+                        <strong>Mirror Recovery Status:</strong><br>
+                        • Status: 🔄 Initializing mirror state...<br>
+                        • Data: <em>Auto-populating in background</em><br>
+                        • Note: <small>Mirror state updates every 5 minutes automatically</small><br>
+                        <br><button class="btn-small" onclick="refreshMirrorState(${index}, '${jobId}')" style="margin-top: 0.5rem;">🔄 Force Refresh</button>
+                    `;
+                    return;
+                }
+                
+                let content = '<strong>Mirror Recovery Status:</strong><br>';
+                let dataFreshness = '';
+                
+                // Extract data from comprehensive state response
+                const mirrorProgress = state.mirror_progress;
+                const resumePoints = state.resume_points;
+                const mirrorGaps = state.mirror_gaps;
+                const stateAnalysis = state.state_analysis;
+                
+                // Calculate status based on available data
+                let status = 'Analyzing...';
+                let totalLag = 0;
+                let partitionCount = 0;
+                
+                if (mirrorProgress) {
+                    if (Array.isArray(mirrorProgress)) {
+                        const latest = mirrorProgress[mirrorProgress.length - 1];
+                        if (latest) {
+                            totalLag = latest.replication_lag || 0;
+                            partitionCount = mirrorProgress.length;
+                            dataFreshness = `<small style="color: #666;">Last update ${new Date(latest.last_updated).toLocaleString()}</small><br>`;
+                        }
+                    } else {
+                        // Single object format - latest state
+                        totalLag = mirrorProgress.replication_lag || 0;
+                        partitionCount = 1;
+                        dataFreshness = `<small style="color: #666;">Last update ${new Date(mirrorProgress.last_updated).toLocaleString()}</small><br>`;
+                    }
+                    
+                    status = totalLag === 0 ? '✅ Synchronized' : 
+                             totalLag < 1000 ? '🟡 Minor Lag' : '🔴 Significant Lag';
+                }
+                
+                // Add timestamp at the top as overview
+                content += dataFreshness;
+                content += `• Status: ${status}<br>`;
+                content += `• Total Offset Lag: ${totalLag.toLocaleString()} messages<br>`;
+                content += `• Partition Count: ${partitionCount}<br>`;
+                
+                // Handle resume points
+                if (resumePoints) {
+                    const points = Array.isArray(resumePoints) ? resumePoints : [resumePoints];
+                    if (points.length > 0 && points[0]) {
+                        const latest = points[points.length - 1];
+                        content += `• Last Resume Point: ${latest.safe_resume_offset || 'N/A'}<br>`;
+                    }
+                }
+                
+                // Handle gaps
+                const gaps = Array.isArray(mirrorGaps) ? mirrorGaps : (mirrorGaps ? [mirrorGaps] : []);
+                if (gaps.length > 0 && gaps[0]) {
+                    content += `<br><strong>⚠️ Detected Gaps (${gaps.length}):</strong><br>`;
+                    gaps.slice(0, 3).forEach(gap => {
+                        const gapSize = gap.gap_size || 'Unknown';
+                        content += `• ${gap.source_topic || 'Topic'}: ${gapSize} messages<br>`;
+                    });
+                    if (gaps.length > 3) {
+                        content += `• ... and ${gaps.length - 3} more gaps<br>`;
+                    }
+                } else {
+                    content += `<br><strong>✅ No gaps detected</strong><br>`;
+                }
+                
+                content += `<br><strong>Topic Health:</strong><br>`;
+                content += `<div id="topic-health-${index}"><em>Loading topic health...</em></div>`;
+                
+                
+                
+                mirrorContainer.innerHTML = content;
+                loadTopicHealth(index, jobId);
+            })
+            .catch(err => {
+                console.error('Error loading mirror state:', err);
+                mirrorContainer.innerHTML = `
+                    <strong>Mirror Recovery Status:</strong><br>
+                    • Status: ❌ Error loading state<br>
+                    • Issue: ${err.message}<br>
+                    <br><button class="btn-small" onclick="refreshMirrorState(${index}, '${jobId}')" style="margin-top: 0.5rem;">🔄 Retry</button>
+                `;
+            });
+        }
+
+        function loadInventorySnapshots(index, jobId) {
+            const inventoryContainer = document.getElementById(`inventory-snapshots-${index}`);
+            
+            // Load snapshot list first to get the latest snapshot ID
+            fetch(`/api/v1/jobs/${jobId}/inventory/snapshots`, {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => response.ok ? response.json() : null)
+            .then(snapshots => {
+                if (!snapshots || snapshots.length === 0) {
+                    inventoryContainer.innerHTML = `
+                    <strong>Topic Snapshots:</strong><br>
+                    <em>No snapshots available. Job has not been started yet.</em>
+                    `;
+                    return;
+                }
+                
+                const latest = snapshots[0];
+                const formatTimestamp = (timestamp) => {
+                    if (!timestamp) return 'Unknown';
+                    const date = new Date(timestamp);
+                    return isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+                };
+                
+                // Now fetch the detailed snapshot data using the snapshot ID
+                return fetch(`/api/v1/inventory/snapshots/${latest.id}`, {
+                    headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+                })
+                .then(response => response.ok ? response.json() : null)
+                .then(detailedInventory => {
+                    let content = `<strong>Latest Topic Snapshot (${formatTimestamp(latest.snapshot_time || latest.timestamp || latest.created_at)}):</strong><br>`;
+                    
+                    if (detailedInventory) {
+                        // Infrastructure Topology
+                        if (detailedInventory.source_cluster || detailedInventory.target_cluster) {
+                            content += `<br><strong>Infrastructure Topology:</strong><br>`;
+                            if (detailedInventory.source_cluster) {
+                                content += `• Source: ${detailedInventory.source_cluster.broker_count || 0} brokers, ${detailedInventory.source_cluster.topic_count || 0} topics<br>`;
+                            }
+                            if (detailedInventory.target_cluster) {
+                                content += `• Target: ${detailedInventory.target_cluster.broker_count || 0} brokers, ${detailedInventory.target_cluster.topic_count || 0} topics<br>`;
+                            }
+                        }
+                        
+                        // Compression Analysis
+                        const allTopics = [
+                            ...(detailedInventory.source_topics || []),
+                            ...(detailedInventory.target_topics || [])
+                        ];
+                        if (allTopics.length > 0) {
+                            const compressionStats = analyzeCompressionTypes(allTopics);
+                            content += `<br><strong>Compression Analysis (${allTopics.length} topics):</strong><br>`;
+                            if (compressionStats.distribution) {
+                                Object.entries(compressionStats.distribution).forEach(([type, count]) => {
+                                    const percentage = ((count / allTopics.length) * 100).toFixed(1);
+                                    const typeDisplay = type === 'NONE' || type === 'none' ? 'None' : type.toUpperCase();
+                                    content += `• ${typeDisplay}: ${count} topics (${percentage}%)<br>`;
+                                });
+                            }
+                            if (compressionStats.recommendation) {
+                                content += `• 💡 ${compressionStats.recommendation}<br>`;
+                            }
+                        }
+                        
+                        // Topic Catalog
+                        if (allTopics.length > 0) {
+                            content += `<br><strong>Topic Catalog (${allTopics.length}):</strong><br>`;
+                            allTopics.slice(0, 4).forEach(topic => {
+                                const compressionType = topic.compression_type === 'NONE' || !topic.compression_type ? 'None' : topic.compression_type;
+                                content += `• ${topic.topic_name}: ${topic.partition_count}p, RF=${topic.replication_factor}, ${compressionType}<br>`;
+                            });
+                            if (allTopics.length > 4) {
+                                content += `• ... and ${allTopics.length - 4} more topics<br>`;
+                            }
+                        }
+                        
+                        // Partition Analysis
+                        const allPartitions = [
+                            ...(detailedInventory.source_partitions || []),
+                            ...(detailedInventory.target_partitions || [])
+                        ];
+                        if (allPartitions.length > 0) {
+                            const totalMessages = allPartitions.reduce((sum, p) => sum + (parseInt(p.high_water_mark) || 0), 0);
+                            const avgReplicas = allPartitions.reduce((sum, p) => sum + (p.replica_count || 0), 0) / allPartitions.length;
+                            content += `<br><strong>Partition Analysis:</strong><br>`;
+                            content += `• Total Partitions: ${allPartitions.length}<br>`;
+                            content += `• Avg Replicas: ${avgReplicas.toFixed(1)}<br>`;
+                            if (totalMessages > 0) {
+                                content += `• Total Messages: ${totalMessages.toLocaleString()}<br>`;
+                            }
+                        }
+                        
+                        // Consumer Group Monitoring
+                        if (detailedInventory.consumer_groups && detailedInventory.consumer_groups.length > 0) {
+                            content += `<br><strong>👥 Consumer Groups (${detailedInventory.consumer_groups.length}):</strong><br>`;
+                            detailedInventory.consumer_groups.slice(0, 3).forEach(group => {
+                                // Use job status to determine appropriate fallback for undefined consumer group state
+                                let state = group.state;
+                                if (!state) {
+                                    // Check if we can find the job status for this consumer group
+                                    const jobFromGroup = appState.jobs.find(j => group.group_id.includes(j.id));
+                                    if (jobFromGroup && (jobFromGroup.status === 'active' || jobFromGroup.status === 'running')) {
+                                        state = 'Mirroring';
+                                    } else {
+                                        state = 'Initializing';
+                                    }
+                                }
+                                const status = state === 'Stable' ? '✅' : 
+                                             state === 'Mirroring' ? '🔄' : 
+                                             state === 'Dead' ? '❌' : '🔄';
+                                const totalLag = group.total_lag || 0;
+                                content += `• ${group.group_id}: ${status} ${state}, Lag: ${totalLag.toLocaleString()}<br>`;
+                            });
+                            if (detailedInventory.consumer_groups.length > 3) {
+                                content += `• ... and ${detailedInventory.consumer_groups.length - 3} more groups<br>`;
+                            }
+                        }
+                        
+                        // Connection Health
+                        if (detailedInventory.connections && detailedInventory.connections.length > 0) {
+                            content += `<br><strong>Connection Health:</strong><br>`;
+                            detailedInventory.connections.forEach(conn => {
+                                const status = conn.connection_successful ? '✅' : '❌';
+                                // Prioritize security_protocol and simplify for display
+                                let authType = 'Unknown';
+                                if (conn.security_protocol === 'SASL_SSL') {
+                                    authType = 'SSL';
+                                } else if (conn.security_protocol === 'SSL') {
+                                    authType = 'SSL';
+                                } else if (conn.security_protocol === 'SASL_PLAINTEXT') {
+                                    authType = 'SASL';
+                                } else if (conn.security_protocol) {
+                                    authType = conn.security_protocol;
+                                } else if (conn.sasl_mechanism) {
+                                    authType = conn.sasl_mechanism;
+                                }
+                                
+                                const connectionType = conn.connection_type || 'unknown';
+                                const clusterLabel = connectionType.includes('source') ? 'Source' : 
+                                                   connectionType.includes('target') ? 'Target' : 
+                                                   connectionType.charAt(0).toUpperCase() + connectionType.slice(1);
+                                const statusText = conn.connection_successful ? 'connected' : 'failed';
+                                content += `• ${clusterLabel} Cluster: ${status} ${statusText} (${authType})<br>`;
+                            });
+                        }
+                        
+                        // Data Volume Metrics
+                        if (allPartitions.length > 0) {
+                            let totalBytes = 0;
+                            allPartitions.forEach(p => {
+                                // Estimate bytes based on high water mark (rough calculation)
+                                const messages = parseInt(p.high_water_mark) || 0;
+                                totalBytes += messages * 1024; // Assume 1KB average message size
+                            });
+                            if (totalBytes > 0) {
+                                content += `<br><strong>💾 Data Volume Metrics:</strong><br>`;
+                                content += `• Estimated Size: ${formatBytes(totalBytes)}<br>`;
+                            }
+                        }
+                        
+                        // Real-time Topic Health
+                        if (allTopics.length > 0) {
+                            const healthyTopics = allTopics.filter(t => t.partition_count > 0 && t.replication_factor > 0);
+                            const healthPercentage = (healthyTopics.length / allTopics.length * 100).toFixed(1);
+                            content += `<br><strong>Topic Health:</strong><br>`;
+                            content += `• Healthy Topics: ${healthyTopics.length}/${allTopics.length} (${healthPercentage}%)<br>`;
+                        }
+                    } else {
+                        // Fallback to basic info from snapshot metadata
+                        content += `<br><strong>📊 Basic Info:</strong><br>`;
+                        content += `• Snapshot ID: ${latest.id}<br>`;
+                        content += `• Capture Type: ${latest.trigger_type || 'manual'}<br>`;
+                    }
+                    
+                    // Tracking History
+                    content += `<br><strong>Tracking History:</strong><br>`;
+                    content += `• Total Snapshots: ${snapshots.length}<br>`;
+                    if (snapshots.length > 1) {
+                        const firstSnapshot = snapshots[snapshots.length - 1];
+                        const firstTime = formatTimestamp(firstSnapshot.snapshot_time || firstSnapshot.timestamp || firstSnapshot.created_at);
+                        const trackingDuration = new Date() - new Date(firstSnapshot.snapshot_time || firstSnapshot.timestamp || firstSnapshot.created_at);
+                        const trackingHours = Math.ceil(trackingDuration / (1000 * 60 * 60));
+                        content += `• First Capture: ${firstTime}<br>`;
+                        content += `• Tracking Since: ${trackingHours < 24 ? trackingHours + ' hours' : Math.ceil(trackingHours/24) + ' days'}<br>`;
+                    } else {
+                        content += `• First capture for this job<br>`;
+                    }
+                    
+                    inventoryContainer.innerHTML = content;
+                });
+            })
+            .catch(err => {
+                console.error('Error loading inventory snapshots:', err);
+                inventoryContainer.innerHTML = `
+                    <strong>Topic Snapshots:</strong><br>
+                    <em>Unable to load inventory data. ${err.message}</em>
+                `;
+            });
+        }
+
+        function loadTopicHealth(index, jobId) {
+            const healthContainer = document.getElementById(`topic-health-${index}`);
+            fetch(`/api/v1/jobs/${jobId}/topic-health`, {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to fetch topic health');
+                }
+                return response.json();
+            })
+            .then(healthData => {
+                if (!Array.isArray(healthData)) {
+                    throw new Error('Invalid health data format');
+                }
+                const healthyTopics = healthData.filter(t => t.is_healthy).length;
+                const totalTopics = healthData.length;
+                const underReplicated = healthData.reduce((sum, t) => sum + t.under_replicated_partitions, 0);
+                const statusIcon = healthyTopics === totalTopics ? '✅' : '⚠️';
+
+                healthContainer.innerHTML = `
+                    • Status: ${statusIcon} ${healthyTopics === totalTopics ? 'All topics healthy' : 'Some topics unhealthy'}<br>
+                    • Healthy Topics: ${healthyTopics}/${totalTopics}<br>
+                    • Under-replicated Partitions: ${underReplicated}
+                `;
+            })
+            .catch(err => {
+                console.error('Error loading topic health:', err);
+                healthContainer.innerHTML = `
+                    • Status: ❓ Unknown<br>
+                    • Healthy Topics: N/A<br>
+                    • Under-replicated Partitions: N/A
+                `;
+            });
+        }
+
+        function refreshMirrorState(index, jobId) {
+            const mirrorContainer = document.getElementById(`mirror-state-${index}`);
+            mirrorContainer.innerHTML = '<em>Refreshing mirror state...</em>';
+            
+            // Trigger fresh analysis
+            fetch(`/api/v1/jobs/${jobId}/mirror/validate-mirror`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => response.ok ? response.json() : null)
+            .then(() => {
+                // Reload the mirror state after validation
+                setTimeout(() => loadMirrorState(index, jobId), 1000);
+            })
+            .catch(err => {
+                console.error('Error refreshing mirror state:', err);
+                loadMirrorState(index, jobId);
+            });
+        }
+
+        function formatResponseTime(ms) {
+            if (ms < 1000) {
+                return `${Math.round(ms)}ms`;
+            }
+            return `${(ms / 1000).toFixed(1)}s`;
+        }
+
+        function viewFullInventory(index, jobId) {
+            // Open a modal or new window with detailed inventory view
+            fetch(`/api/v1/jobs/${jobId}/inventory/full`, {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => response.ok ? response.json() : null)
+            .then(inventory => {
+                if (inventory) {
+                    showInventoryModal(jobId, inventory);
+                } else {
+                    alert('No detailed inventory available for this job.');
+                }
+            })
+            .catch(err => {
+                console.error('Error loading full inventory:', err);
+                alert('Failed to load full inventory data.');
+            });
+        }
+
+        function showInventoryModal(jobId, inventory) {
+            // Create a modal to display detailed inventory information
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                background: rgba(0,0,0,0.8); z-index: 1000; display: flex; 
+                justify-content: center; align-items: center;
+            `;
+            
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: white; padding: 2rem; border-radius: 8px; 
+                max-width: 80%; max-height: 80%; overflow-y: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            `;
+            
+            content.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3>Full Inventory - Job ${jobId}</h3>
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                            style="background: #e74c3c; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">Close</button>
+                </div>
+                <div style="font-family: monospace; font-size: 0.9rem; line-height: 1.4; white-space: pre-wrap; background: #f8f9fa; padding: 1rem; border-radius: 4px; border: 1px solid #e0e0e0;">
+${JSON.stringify(inventory, null, 2)}
+                </div>
+            `;
+            
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            // Close modal when clicking outside
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+
+        // Utility functions - defined early to ensure availability
+        function formatBytes(bytes) {
+            if (bytes <= 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function analyzeCompressionTypes(topics) {
+            if (!topics || topics.length === 0) {
+                return { distribution: {}, recommendation: null };
+            }
+            
+            // Count compression types
+            const distribution = {};
+            let totalPartitions = 0;
+            let compressedTopics = 0;
+            
+            topics.forEach(topic => {
+                const compressionType = topic.compression_type || 'NONE';
+                const normalizedType = compressionType === 'NONE' || compressionType === 'none' || !compressionType ? 'NONE' : compressionType.toUpperCase();
+                
+                distribution[normalizedType] = (distribution[normalizedType] || 0) + 1;
+                totalPartitions += topic.partition_count || 0;
+                
+                if (normalizedType !== 'NONE') {
+                    compressedTopics++;
+                }
+            });
+            
+            // Generate compression recommendation
+            let recommendation = null;
+            const compressionRatio = compressedTopics / topics.length;
+            
+            if (compressionRatio === 0) {
+                recommendation = "Consider enabling compression (GZIP/LZ4) to reduce network bandwidth";
+            } else if (compressionRatio < 0.5) {
+                recommendation = "Partial compression detected - consider standardizing compression across all topics";
+            } else if (compressionRatio === 1) {
+                recommendation = "Excellent: All topics use compression for optimal network efficiency";
+            } else {
+                const uncompressed = topics.length - compressedTopics;
+                recommendation = `Good compression coverage - ${uncompressed} topics could benefit from compression`;
+            }
+            
+            return { distribution, recommendation };
+        }
+
+        // Helper function to format last active time
+        function formatLastActive(time) {
+            const now = new Date();
+            const diff = now - time;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            
+            if (minutes < 1) return "Just now";
+            if (minutes < 60) return `${minutes}m ago`;
+            if (hours < 24) return `${hours}h ago`;
+            return `${days}d ago`;
+        }
+
+        function renderTopology(jobs, clusters) {
+            const container = document.getElementById('topology-view');
+            container.innerHTML = '';
+            
+            if (clusters.length === 0) {
+                container.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #7f8c8d;"><em>No clusters configured</em></div>';
+                return;
+            }
+            
+            const validJobs = jobs.filter(j => 
+                j.source_cluster_name && j.target_cluster_name &&
+                clusters.find(c => c.name === j.source_cluster_name) &&
+                clusters.find(c => c.name === j.target_cluster_name)
+            );
+            
+            const containerRect = container.getBoundingClientRect();
+            const centerX = containerRect.width / 2;
+            const centerY = containerRect.height / 2;
+            
+            const nodeData = clusters.map((c, index) => {
+                let region = 'unknown';
+                let regionColor = '#95a5a6';
+                let initialX = centerX;
+                let initialY = centerY;
+                
+                if (c.name.includes('eu') || c.name.includes('nl')) {
+                    region = 'EU';
+                    regionColor = '#3498db';
+                    initialX = centerX - 200;
+                    initialY = centerY;
+                } else if (c.name.includes('us_west') || c.name.includes('west')) {
+                    region = 'US-W';
+                    regionColor = '#e67e22';
+                    initialX = centerX + 100;
+                    initialY = centerY - 100;
+                } else if (c.name.includes('us_east') || c.name.includes('east')) {
+                    region = 'US-E';
+                    regionColor = '#9b59b6';
+                    initialX = centerX + 100;
+                    initialY = centerY + 100;
+                }
+                
+                return {
+                    id: c.name,
+                    label: `${c.name}\n(${region})`,
+                    title: `Cluster: ${c.name}\nRegion: ${region}\nProvider: ${c.provider || 'Unknown'}\nStatus: ${c.status}`,
+                    shape: 'box',
+                    x: initialX,
+                    y: initialY,
+                    color: {
+                        background: c.status === 'active' ? regionColor : '#95a5a6',
+                        border: c.status === 'active' ? '#2c3e50' : '#7f8c8d',
+                        highlight: { background: '#f39c12', border: '#e67e22' }
+                    },
+                    borderWidth: 3,
+                    font: { color: 'white', size: 14, face: 'Arial', bold: true, multi: true },
+                    margin: 12,
+                    widthConstraint: { minimum: 160, maximum: 200 },
+                    heightConstraint: { minimum: 60, maximum: 80 },
+                    shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 8, x: 2, y: 2 }
+                };
+            });
+            
+            const nodes = new vis.DataSet(nodeData);
+            
+            const edges = new vis.DataSet(validJobs.map((j, index) => {
+                let jobColor;
+                if (j.status === 'running' || j.status === 'active') {
+                    jobColor = '#27ae60';
+                } else if (j.status === 'paused') {
+                    jobColor = '#f39c12';
+                } else {
+                    jobColor = '#e74c3c';
+                }
+                
+                return {
+                    id: `job-${index}`,
+                    from: j.source_cluster_name,
+                    to: j.target_cluster_name,
+                    label: `${j.name}\n(${j.status})`,
+                    title: `Job: ${j.name}\nStatus: ${j.status}\nSource: ${j.source_cluster_name}\nTarget: ${j.target_cluster_name}`,
+                    color: { color: jobColor, highlight: '#2980b9', hover: '#3498db' },
+                    font: { align: 'horizontal', size: 12, color: '#2c3e50', background: 'rgba(255,255,255,0.9)', strokeWidth: 1, strokeColor: 'white', multi: true },
+                    width: j.status === 'running' ? 6 : j.status === 'paused' ? 4 : 2,
+                    dashes: j.status === 'paused' ? [10, 5] : j.status !== 'running' ? [5, 5] : false,
+                    smooth: { enabled: true, type: 'curvedCW', roundness: 0.2 },
+                    arrows: { to: { enabled: true, scaleFactor: 1, type: 'arrow' } },
+                    shadow: { enabled: true, color: 'rgba(0,0,0,0.2)', size: 4 }
+                };
+            }));
+            
+            const options = {
+                layout: { randomSeed: 42, improvedLayout: true, hierarchical: { enabled: false } },
+                physics: {
+                    enabled: true,
+                    stabilization: { enabled: true, iterations: 200, updateInterval: 25, fit: true },
+                    barnesHut: {
+                        gravitationalConstant: -20000,
+                        centralGravity: 0.05,
+                        springLength: 400,
+                        springConstant: 0.04,
+                        damping: 0.12,
+                        avoidOverlap: 1.5
+                    },
+                    maxVelocity: 12,
+                    minVelocity: 1,
+                    solver: 'barnesHut',
+                    timestep: 0.5,
+                    adaptiveTimestep: true
+                },
+                interaction: { hover: true, hoverConnectedEdges: true, selectConnectedEdges: false, tooltipDelay: 200, zoomView: true, dragView: true, dragNodes: true },
+                nodes: { chosen: { node: function(values, id, selected, hovering) { if (hovering) { values.shadow = true; values.shadowColor = 'rgba(0,0,0,0.5)'; values.shadowSize = 15; } } } },
+                edges: { chosen: { edge: function(values, id, selected, hovering) { if (hovering) { values.width = values.width * 1.5; values.shadow = true; } } } }
+            };
+            
+            const network = new vis.Network(container, { nodes, edges }, options);
+            
+            // Create animation overlay canvas
+            const animationCanvas = document.createElement('canvas');
+            animationCanvas.id = 'topology-animation-canvas';
+            animationCanvas.width = container.offsetWidth;
+            animationCanvas.height = container.offsetHeight;
+            container.appendChild(animationCanvas);
+            
+            const animCtx = animationCanvas.getContext('2d');
+            let animationId;
+            
+            function animateConnectors() {
+                try {
+                    if (!animationCanvas) {
+                        animationId = requestAnimationFrame(animateConnectors);
+                        return;
+                    }
+                    
+                    // Clear the animation canvas
+                    animCtx.clearRect(0, 0, animationCanvas.width, animationCanvas.height);
+                    
+                    const edges = network.body.data.edges.get();
+                    
+                    edges.forEach(edge => {
+                        if (edge.width > 4) { // Only animate running jobs (thick lines)
+                            try {
+                                const positions = network.getPositions([edge.from, edge.to]);
+                                if (!positions[edge.from] || !positions[edge.to]) return;
+                                
+                                const fromPos = positions[edge.from];
+                                const toPos = positions[edge.to];
+                                
+                                const dx = toPos.x - fromPos.x;
+                                const dy = toPos.y - fromPos.y;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                
+                                if (distance < 10) return; // Skip very short connections
+                                
+                                const speed = 1.0;
+                                const time = Date.now() / 1000;
+                                const progress = (time * speed) % 1;
+                                
+                                const x = fromPos.x + (dx * progress);
+                                const y = fromPos.y + (dy * progress);
+                                
+                                // Draw animated dot with glow effect
+                                animCtx.save();
+                                animCtx.shadowColor = edge.color.color;
+                                animCtx.shadowBlur = 8;
+                                animCtx.globalAlpha = 0.9;
+                                animCtx.fillStyle = edge.color.color;
+                                animCtx.beginPath();
+                                animCtx.arc(x, y, 6, 0, 2 * Math.PI);
+                                animCtx.fill();
+                                
+                                // Add inner bright dot
+                                animCtx.shadowBlur = 0;
+                                animCtx.globalAlpha = 1.0;
+                                animCtx.fillStyle = '#ffffff';
+                                animCtx.beginPath();
+                                animCtx.arc(x, y, 2, 0, 2 * Math.PI);
+                                animCtx.fill();
+                                
+                                animCtx.restore();
+                            } catch (edgeError) {
+                                console.warn('Animation error for edge:', edgeError);
+                            }
+                        }
+                    });
+                    
+                    animationId = requestAnimationFrame(animateConnectors);
+                } catch (error) {
+                    console.error('Animation loop error:', error);
+                    if (animationId) cancelAnimationFrame(animationId);
+                }
+            }
+            
+            // Start animation after network stabilization
+            network.once("stabilizationIterationsDone", function() {
+                setTimeout(() => {
+                    if (!animationId) {
+                        animateConnectors();
+                    }
+                }, 500);
+            });
+            
+            // Stop animation when topology is no longer visible
+            window.stopTopologyAnimation = function() {
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+            };
+            
+            network.once("stabilizationIterationsDone", function () {
+                network.fit({ padding: { top: 50, bottom: 50, left: 50, right: 50 } });
+                setTimeout(() => { network.setOptions({ physics: { enabled: false } }); }, 2000);
+            });
+
+            network.on("dragStart", function(params) {
+                if (params.nodes.length > 0) {
+                    network.setOptions({ physics: { enabled: false } });
+                }
+            });
+
+            network.on("doubleClick", function(params) {
+                network.setOptions({ physics: { enabled: true, stabilization: { enabled: true, iterations: 50 } } });
+                setTimeout(() => { network.setOptions({ physics: { enabled: false } }); }, 1000);
+            });
+
+            network.on("oncontext", function (params) {
+                params.event.preventDefault();
+            });
+        }
+
+        function renderCharts(jobMetrics, jobs = [], timeRange = '2h') {
+            const colors = ['#667eea', '#764ba2', '#3498db', '#e67e22', '#27ae60', '#e74c3c'];
+            
+            const allMetrics = jobMetrics.flatMap(jm => jm.metrics);
+            
+            if (allMetrics.length === 0) {
+                renderEmptyCharts();
+                return;
+            }
+            
+            // Aggregate data by time buckets (5-minute intervals) to reduce clustering
+            const aggregatedData = aggregateMetricsByTime(jobMetrics, timeRange);
+            
+            if (aggregatedData.length === 0) {
+                renderEmptyCharts();
+                return;
+            }
+            
+            // Create time-series datasets with smooth interpolation
+            const throughputDatasets = jobMetrics.map((jobData, index) => {
+                const jobAggregated = aggregatedData.filter(d => d.jobName === jobData.jobName);
+                return {
+                    label: jobData.jobName,
+                    data: jobAggregated.map(d => ({
+                        x: d.timestamp,
+                        y: d.avgThroughput
+                    })),
+                    borderColor: colors[index % colors.length],
+                    backgroundColor: colors[index % colors.length] + '20', // 20% opacity
+                    tension: 0.4, // Smoother curves
+                    fill: false,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    borderWidth: 2
+                };
+            });
+            
+            const latencyDatasets = jobMetrics.map((jobData, index) => {
+                const jobAggregated = aggregatedData.filter(d => d.jobName === jobData.jobName);
+                return {
+                    label: jobData.jobName,
+                    data: jobAggregated.map(d => ({
+                        x: d.timestamp,
+                        y: d.avgLatency
+                    })),
+                    borderColor: colors[index % colors.length],
+                    backgroundColor: colors[index % colors.length] + '20',
+                    tension: 0.4,
+                    fill: false,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    borderWidth: 2
+                };
+            });
+
+            // Preserve zoom state
+            const saveZoom = (chart) => {
+                if (chart && chart.scales && chart.scales.x) {
+                    return { min: chart.scales.x.min, max: chart.scales.x.max };
+                }
+                return null;
+            };
+
+            const throughputZoom = saveZoom(window.throughputChart);
+            const latencyZoom = saveZoom(window.latencyChart);
+
+            // Destroy existing charts if they exist
+            if (window.throughputChart) window.throughputChart.destroy();
+            if (window.latencyChart) window.latencyChart.destroy();
+
+            // Create smooth time-series labels from aggregated data
+            const timeLabels = aggregatedData
+                .filter((d, index, arr) => arr.findIndex(x => x.timestamp.getTime() === d.timestamp.getTime()) === index)
+                .sort((a, b) => a.timestamp - b.timestamp)
+                .map(d => {
+                    if (timeRange === '30d') {
+                        return d.timestamp.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                    }
+                    return d.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                });
+
+            // Create throughput chart with linear time progression
+            window.throughputChart = new Chart(document.getElementById('throughput-chart').getContext('2d'), {
+                type: 'line',
+                data: { 
+                    labels: timeLabels,
+                    datasets: throughputDatasets.map(dataset => ({
+                        ...dataset,
+                        data: dataset.data.map(d => d.y) // Extract y values for linear chart
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        crosshair: {
+                            line: {
+                                color: '#e74c3c',
+                                width: 1
+                            },
+                            sync: {
+                                enabled: true,
+                                group: 1,
+                                suppressTooltips: false
+                            },
+                            zoom: {
+                                enabled: true,
+                                zoomboxBackgroundColor: 'rgba(102,126,234,0.2)',
+                                zoomboxBorderColor: '#667eea',
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x',
+                            }
+                        },
+                        legend: { 
+                            display: jobMetrics.length > 1,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y.toLocaleString()} msg/sec`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            },
+                            min: throughputZoom ? throughputZoom.min : undefined,
+                            max: throughputZoom ? throughputZoom.max : undefined
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Messages per Second'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Create latency chart with linear time progression
+            window.latencyChart = new Chart(document.getElementById('latency-chart').getContext('2d'), {
+                type: 'line',
+                data: { 
+                    labels: timeLabels,
+                    datasets: latencyDatasets.map(dataset => ({
+                        ...dataset,
+                        data: dataset.data.map(d => d.y) // Extract y values for linear chart
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        crosshair: {
+                            line: {
+                                color: '#e74c3c',
+                                width: 1
+                            },
+                            sync: {
+                                enabled: true,
+                                group: 1,
+                                suppressTooltips: false
+                            },
+                            zoom: {
+                                enabled: true,
+                                zoomboxBackgroundColor: 'rgba(102,126,234,0.2)',
+                                zoomboxBorderColor: '#667eea',
+                            }
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                wheel: {
+                                    enabled: true,
+                                },
+                                pinch: {
+                                    enabled: true
+                                },
+                                mode: 'x',
+                            }
+                        },
+                        legend: { 
+                            display: jobMetrics.length > 1,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y} ms lag`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            },
+                            min: latencyZoom ? latencyZoom.min : undefined,
+                            max: latencyZoom ? latencyZoom.max : undefined
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Consumer Lag (messages)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderEmptyCharts(message = "No Data Available") {
+            // Destroy existing charts
+            if (window.throughputChart) window.throughputChart.destroy();
+            if (window.latencyChart) window.latencyChart.destroy();
+
+            const emptyOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    title: {
+                        display: true,
+                        text: message,
+                        position: 'top',
+                        align: 'center',
+                        font: {
+                            size: 16
+                        },
+                        color: '#7f8c8d'
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, display: false },
+                    x: { display: false }
+                }
+            };
+
+            window.throughputChart = new Chart(document.getElementById('throughput-chart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: emptyOptions
+            });
+
+            window.latencyChart = new Chart(document.getElementById('latency-chart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: emptyOptions
+            });
+        }
+
+        function aggregateMetricsByTime(jobMetrics, timeRange = '2h') {
+            let minuteInterval;
+            switch (timeRange) {
+                case '24h':
+                    minuteInterval = 15;
+                    break;
+                case '7d':
+                    minuteInterval = 60; // 1 hour
+                    break;
+                case '30d':
+                    minuteInterval = 360; // 6 hours
+                    break;
+                case '2h':
+                default:
+                    minuteInterval = 2;
+                    break;
+            }
+
+            const aggregated = [];
+            
+            jobMetrics.forEach(jobData => {
+                if (!jobData.metrics || jobData.metrics.length < 2) return;
+
+                const sortedMetrics = jobData.metrics.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                
+                // Group metrics by time buckets
+                const buckets = new Map();
+                
+                sortedMetrics.forEach(metric => {
+                    const timestamp = new Date(metric.timestamp);
+                    // Round to nearest interval
+                    const bucketTime = Math.floor(timestamp.getTime() / (minuteInterval * 60 * 1000)) * (minuteInterval * 60 * 1000);
+                    const bucket = new Date(bucketTime);
+                    
+                    if (!buckets.has(bucket.getTime())) {
+                        buckets.set(bucket.getTime(), {
+                            timestamp: bucket,
+                            metrics: [],
+                            jobName: jobData.jobName
+                        });
+                    }
+                    
+                    const bucketData = buckets.get(bucket.getTime());
+                    bucketData.metrics.push(metric);
+                });
+                
+                // Calculate averages for each bucket
+                buckets.forEach(bucket => {
+                    if (bucket.metrics.length < 2) {
+                        // Not enough data to calculate rate
+                        return;
+                    }
+                    const firstMetric = bucket.metrics[0];
+                    const lastMetric = bucket.metrics[bucket.metrics.length - 1];
+
+                    const timeDelta = (new Date(lastMetric.timestamp).getTime() - new Date(firstMetric.timestamp).getTime()) / 1000;
+                    if (timeDelta === 0) {
+                        return;
+                    }
+
+                    const messageDelta = bucket.metrics.reduce((sum, m) => sum + (m.messages_replicated_delta || 0), 0);
+                    const rate = messageDelta / timeDelta;
+
+                    const avgLatency = bucket.metrics.reduce((sum, m) => sum + (m.avg_lag || 0), 0) / bucket.metrics.length;
+
+                    aggregated.push({
+                        timestamp: bucket.timestamp,
+                        jobName: bucket.jobName,
+                        avgThroughput: rate,
+                        avgLatency: avgLatency,
+                        dataPoints: bucket.metrics.length
+                    });
+                });
+            });
+            
+            return aggregated.sort((a, b) => a.timestamp - b.timestamp);
+        }
+
+        function updateAccessTable(users) {
+            const tbody = document.querySelector('#access-table tbody');
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.username}</td>
+                    <td>${user.role}</td>
+                </tr>
+            `).join('');
+        }
+
+        function generateComplianceReport(period) {
+            fetch(`/api/v1/compliance/report/${period}`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${sessionStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => {
+                        throw new Error(`Server error (${response.status}): ${text}`);
+                    });
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `compliance-report-${period}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            })
+            .catch(err => {
+                console.error('Compliance report error:', err);
+                alert(`Failed to generate report: ${err.message}`);
+            });
+        }
+
+        function toggleInsight(index) {
+            const expandedRow = document.getElementById(`expanded-insight-${index}`);
+            const indicator = document.querySelector(`[data-insight-id="${index}"] .expand-indicator`);
+            
+            if (expandedRow.style.display === 'none') {
+                expandedRow.style.display = 'table-row';
+                indicator.style.transform = 'rotate(180deg)';
+                appState.expandedInsights.add(index);
+            } else {
+                expandedRow.style.display = 'none';
+                indicator.style.transform = 'rotate(0deg)';
+                appState.expandedInsights.delete(index);
+            }
+        }
+
+        function toggleAnomaly(index) {
+            const expandedRow = document.getElementById(`expanded-anomaly-${index}`);
+            const indicator = document.querySelector(`[data-anomaly-id="${index}"] .expand-indicator`);
+            
+            if (expandedRow.style.display === 'none') {
+                expandedRow.style.display = 'table-row';
+                indicator.style.transform = 'rotate(180deg)';
+                appState.expandedAnomalies.add(index);
+            } else {
+                expandedRow.style.display = 'none';
+                indicator.style.transform = 'rotate(0deg)';
+                appState.expandedAnomalies.delete(index);
+            }
+        }
+
+        function toggleRecommendation(index) {
+            const expandedRow = document.getElementById(`expanded-${index}`);
+            const indicator = document.querySelector(`[data-recommendation-id="${index}"] .expand-indicator`);
+            
+            if (expandedRow.style.display === 'none') {
+                expandedRow.style.display = 'table-row';
+                indicator.style.transform = 'rotate(180deg)';
+                appState.expandedRecommendations.add(index);
+            } else {
+                expandedRow.style.display = 'none';
+                indicator.style.transform = 'rotate(0deg)';
+                appState.expandedRecommendations.delete(index);
+            }
+        }
+
+        function toggleIncident(index) {
+            const expandedRow = document.getElementById(`expanded-incident-${index}`);
+            const indicator = document.querySelector(`[data-incident-id="${index}"] .expand-indicator`);
+            
+            if (expandedRow.style.display === 'none') {
+                expandedRow.style.display = 'table-row';
+                indicator.style.transform = 'rotate(180deg)';
+                appState.expandedIncidents.add(index);
+            } else {
+                expandedRow.style.display = 'none';
+                indicator.style.transform = 'rotate(0deg)';
+                appState.expandedIncidents.delete(index);
+            }
+        }
+
+        function loadActivityLogs() {
+            fetch('/api/v1/events', {
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch activity logs');
+                return response.json();
+            })
+            .then(logs => {
+                updateActivityLogsTable(logs);
+            })
+            .catch(err => {
+                console.error('Error loading activity logs:', err);
+                updateActivityLogsTable([]);
+            });
+        }
+
+        function maskSensitiveData(text) {
+            if (!text || text === "undefined") return "No details";
+            
+            return text
+                .replace(/"api_key":"[^"]*"/g, '"api_key":"***MASKED***"')
+                .replace(/"api_secret":"[^"]*"/g, '"api_secret":"***MASKED***"')
+                .replace(/"password":"[^"]*"/g, '"password":"***MASKED***"')
+                .replace(/"old_password":"[^"]*"/g, '"old_password":"***MASKED***"')
+                .replace(/"new_password":"[^"]*"/g, '"new_password":"***MASKED***"')
+                .replace(/"Token":"sk-[^"]*"/g, '"Token":"***MASKED***"')
+                .replace(/cflt[A-Za-z0-9+\/=]+/g, '***MASKED_TOKEN***')
+                .replace(/sk-[A-Za-z0-9+\/=]{20,}/g, 'sk-***MASKED***')
+                .replace(/[A-Z0-9]{16,}/g, match => match.length > 8 ? '***MASKED***' : match);
+        }
+
+        function formatActivityDetails(details, eventType) {
+            if (!details || details === "undefined" || details === "null") {
+                return "No additional details";
+            }
+
+            // Handle different event types with better formatting
+            if (eventType.includes('config')) {
+                return formatConfigDetails(details);
+            } else if (eventType.includes('jobs')) {
+                return formatJobDetails(details, eventType);
+            } else if (eventType.includes('clusters')) {
+                return formatClusterDetails(details, eventType);
+            } else if (eventType.includes('users')) {
+                return formatUserDetails(details, eventType);
+            }
+
+            // Fallback to masked details
+            const masked = maskSensitiveData(details);
+            return masked.length > 100 ? masked.substring(0, 97) + "..." : masked;
+        }
+
+        function formatConfigDetails(details) {
+            try {
+                const data = JSON.parse(details);
+                const changes = [];
+                
+                if (data.AI && data.AI.Provider) {
+                    changes.push(`AI Provider: ${data.AI.Provider}`);
+                }
+                if (data.AI && data.AI.Model) {
+                    changes.push(`AI Model: ${data.AI.Model}`);
+                }
+                if (data.Server && data.Server.Port) {
+                    changes.push(`Server Port: ${data.Server.Port}`);
+                }
+                if (data.Replication) {
+                    changes.push(`Replication Config Updated`);
+                }
+                
+                return changes.length > 0 ? changes.join(', ') : 'Configuration updated';
+            } catch (e) {
+                return details.includes('AI') ? 'AI configuration updated' : 'System configuration updated';
+            }
+        }
+
+        function formatJobDetails(details, eventType) {
+            if (eventType.includes('/start')) return 'Started replication job';
+            if (eventType.includes('/stop')) return 'Stopped replication job';
+            if (eventType.includes('/restart')) return 'Restarted replication job';
+            
+            try {
+                const data = JSON.parse(details);
+                if (data.name) {
+                    return `Job operation: ${data.name}`;
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+            
+            return 'Job configuration change';
+        }
+
+        function formatClusterDetails(details, eventType) {
+            try {
+                const data = JSON.parse(details);
+                if (data.name && data.provider) {
+                    return `Cluster: ${data.name} (${data.provider})`;
+                } else if (data.name) {
+                    return `Cluster: ${data.name}`;
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+            
+            return 'Cluster configuration change';
+        }
+
+        function formatUserDetails(details, eventType) {
+            try {
+                const data = JSON.parse(details);
+                if (data.username && data.role) {
+                    return `User: ${data.username}, Role: ${data.role}`;
+                } else if (data.username) {
+                    return `User operation: ${data.username}`;
+                }
+            } catch (e) {
+                // Ignore parsing errors
+            }
+            
+            return 'User management operation';
+        }
+
+        function updateActivityLogsTable(logs) {
+            const tbody = document.querySelector('#activity-logs-table tbody');
+            
+            if (!logs || logs.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 2rem; color: #7f8c8d;">
+                            <em>No activity logs found</em>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = logs.slice(-50).reverse().map(log => {
+                const eventType = log.event_type || 'Unknown';
+                const action = eventType.replace(/_/g, ' ').replace(/^(GET|POST|PUT|DELETE)\s+/, '');
+                const method = eventType.match(/^(GET|POST|PUT|DELETE)/)?.[1] || 'ACTION';
+                const statusClass = getStatusClass(method);
+                const formattedDetails = formatActivityDetails(log.details, eventType);
+                
+                return `
+                    <tr>
+                        <td>${new Date(log.timestamp).toLocaleString()}</td>
+                        <td>${log.initiator || 'System'}</td>
+                        <td><span class="method-badge ${method.toLowerCase()}">${method}</span></td>
+                        <td>${action}</td>
+                        <td><span class="status ${statusClass}">Success</span></td>
+                        <td style="max-width: 300px; word-wrap: break-word;">${formattedDetails}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getStatusClass(method) {
+            switch (method) {
+                case 'POST': return 'created';
+                case 'PUT': return 'updated'; 
+                case 'DELETE': return 'deleted';
+                default: return 'success';
+            }
+        }
+
+        // Helper function to extract AI provider from model name
+        function getProviderFromModel(model) {
+            if (!model) return 'Unknown';
+            
+            const modelLower = model.toLowerCase();
+            if (modelLower.includes('gpt') || modelLower.includes('openai')) return 'OpenAI';
+            if (modelLower.includes('claude')) return 'Anthropic';
+            if (modelLower.includes('gemini')) return 'Google';
+            if (modelLower.includes('grok')) return 'xAI';
+            if (modelLower.includes('llama')) return 'Meta';
+            return 'Custom';
+        }
+
+        function triggerAnalysis(jobId, period) {
+            fetch(`/api/v1/jobs/${jobId}/ai/historical-analysis?period=${period}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${sessionStorage.getItem('token')}` }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to trigger analysis');
+                }
+                alert(`Historical analysis for job ${jobId} over ${period} has been triggered.`);
+            })
+            .catch(err => {
+                console.error('Error triggering analysis:', err);
+                alert(`Failed to trigger analysis: ${err.message}`);
+            });
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/login';
+        }
+
+        function loadVersion() {
+            fetch('/api/v1/version')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('version').textContent = data.version;
+                })
+                .catch(err => {
+                    console.error('Error fetching version:', err);
+                });
+        }
+    </script>
+</body>
+</html>

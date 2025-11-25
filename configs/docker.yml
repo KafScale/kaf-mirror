@@ -1,0 +1,44 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "development"
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+  cors:
+    allowed_origins: ["*"]
+
+logging:
+  file: "logs/kaf-mirror.log"
+  level: "INFO"
+  max_size: 100
+  max_backups: 5
+  max_age: 30
+  console: true
+
+database:
+  path: "data/kaf-mirror.db"
+
+clusters:
+  source:
+    provider: "plain"
+    brokers: "kafka-source:9092"
+    security:
+      enabled: false
+  target:
+    provider: "plain"
+    brokers: "kafka-target:9092"
+    security:
+      enabled: false
+
+replication:
+  job_id: "local-dev"
+  batch_size: 1000
+  parallelism: 4
+  compression: "none"
+
+topics:
+  - source: "demo-source"
+    target: "demo-target"
+    enabled: true

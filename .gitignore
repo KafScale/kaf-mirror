@@ -1,0 +1,67 @@
+# go-build
+buid/
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# SQLite database
+*.db
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# Log files
+*.log
+log/
+logs/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE-specific files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build output
+build/
+bin/
+
+# Coverage reports
+*.cover
+coverage.txt
+
+# Cline
+.cline
+.clinerules/
+
+# Deployment artifacts
+scripts/archive-tags.sh

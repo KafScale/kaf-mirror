@@ -1,0 +1,16 @@
+[Unit]
+Description=kaf-mirror service
+After=network.target
+
+[Service]
+User=kaf-mirror
+Group=kaf-mirror
+WorkingDirectory=/opt/kaf-mirror
+ExecStart=/opt/kaf-mirror/kaf-mirror
+Restart=always
+RestartSec=3
+StandardOutput=file:/var/log/kaf-mirror/kaf-mirror.log
+StandardError=file:/var/log/kaf-mirror/kaf-mirror.err
+
+[Install]
+WantedBy=multi-user.target
