@@ -43,6 +43,15 @@ To reset the initial admin password:
 docker-compose -p kaf-mirror exec kaf-mirror ./admin-cli reset-admin-password admin@localhost
 ```
 
+### 1b. Run from prebuilt image (GHCR)
+
+You can pull and run the published container without building locally:
+```bash
+docker pull ghcr.io/<org>/kaf-mirror:latest
+docker run -p 8080:8080 ghcr.io/<org>/kaf-mirror:latest
+```
+Replace `<org>` with the GitHub org/owner of this repo. The UI/API will be at `http://localhost:8080`.
+
 ## Resilience and Buffering
 
 The application is designed to be resilient to network issues and outages of the target cluster. It does not require a separate disk-based buffer for the following reasons:
