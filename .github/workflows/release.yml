@@ -63,7 +63,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/kaf-mirror:latest
 
       - name: Create Release and Upload Assets
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             kaf-mirror-linux-amd64
@@ -73,5 +73,7 @@ jobs:
             mirror-cli-darwin-amd64
           draft: false
           prerelease: false
+          fail_on_unmatched_files: true
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
