@@ -1,55 +1,29 @@
 # Contributing to kaf-mirror
 
-Thank you for your interest in contributing to this project!
+Thanks for helping improve **kaf-mirror**. This guide covers how to propose changes and what we expect in pull requests.
 
-## License Headers
+## How to contribute
+- **Discuss first**: For significant changes, open an issue to align on scope and design.
+- **Branches & PRs**: Fork/branch from `main`, keep commits focused, and include a clear PR description referencing any related issues.
+- **Code style**: Follow idiomatic Go. Run `go fmt` on touched files and keep dependencies tidy.
+- **Tests**: Add or update tests for any behavioral change. Run `go test ./...` before submitting.
+- **Documentation**: Update README/config samples/CLI help when behavior or flags change.
 
-All source code files must include the following license header at the top of the file:
+## Licensing
+- The project is released under the **Apache License 2.0** (see `LICENSE`).
+- Add the Apache 2.0 header to new Go files:  
+  `// Copyright 2025 Scalytics, Inc. and Scalytics Europe, LTD`  
+  `// Licensed under the Apache License, Version 2.0 (the "License"); ...`
 
-### For Go Files (`.go`)
+## Opening a pull request
+- Describe the problem and solution, along with any trade-offs.
+- Note testing performed (`go test ./...`, manual steps, etc.).
+- Avoid committing built artifacts or secrets; keep PRs source-only.
 
-```go
-// kaf-mirror - A high-performance Kafka replication tool with AI-powered operational intelligence.
-// Copyright (C) 2025 Scalytics
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-```
-
-### For YAML, SQL, and other script files
-
-```yaml
-# Copyright 2025 Alexander Alten (2pk03) and Scalytics
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-## Testing
-
-All pull requests must include unit tests for any new features or bug fixes. Please ensure that all tests pass before submitting a pull request.
-
-To run the tests, use the following command:
-
+## Development quickstart
 ```bash
-go test ./tests/...
+go fmt ./...
+go test ./...
 ```
+
+If you need help or review, mention maintainers in the PR and link to the related issue or discussion.

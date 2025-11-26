@@ -1,12 +1,15 @@
-# go-build
-buid/
-
 # Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+admin-cli
+kaf-mirror
+mirror-cli
+mirror-cli-*
+kaf-mirror-*
+admin-cli-*
 
 # Test binary, built with `go test -c`
 *.test
@@ -54,6 +57,7 @@ logs/
 # Build output
 build/
 bin/
+.gocache/
 
 # Coverage reports
 *.cover

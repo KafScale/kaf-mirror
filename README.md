@@ -371,3 +371,7 @@ To run the unit tests, use the following command:
 ```bash
 go test ./...
 ```
+
+## License
+
+Apache License 2.0. See `LICENSE` for details.
