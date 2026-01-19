@@ -2717,7 +2717,9 @@ ${JSON.stringify(inventory, null, 2)}
         }
 
         function logout() {
-            localStorage.clear();
+            sessionStorage.removeItem('token');
+            localStorage.removeItem('token');
+            delete window.authFailureHandled;
             window.location.href = '/login';
         }
 
