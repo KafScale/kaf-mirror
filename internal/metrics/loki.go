@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package metrics
 
 import (
@@ -47,8 +46,8 @@ func (s *LokiSink) Send(metric database.ReplicationMetric) error {
 				"values": [][]string{
 					{
 						fmt.Sprintf("%d", time.Now().UnixNano()),
-						fmt.Sprintf("messages_replicated=%d bytes_transferred=%d current_lag=%d error_count=%d",
-							metric.MessagesReplicated, metric.BytesTransferred, metric.CurrentLag, metric.ErrorCount),
+						fmt.Sprintf("messages_replicated=%d bytes_transferred=%d messages_consumed=%d bytes_consumed=%d current_lag=%d error_count=%d",
+							metric.MessagesReplicated, metric.BytesTransferred, metric.MessagesConsumed, metric.BytesConsumed, metric.CurrentLag, metric.ErrorCount),
 					},
 				},
 			},

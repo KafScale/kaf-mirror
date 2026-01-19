@@ -319,6 +319,8 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 			timestamp DATETIME NOT NULL,
 			messages_replicated_delta INTEGER NOT NULL,
 			bytes_transferred_delta INTEGER NOT NULL,
+			messages_consumed_delta INTEGER NOT NULL DEFAULT 0,
+			bytes_consumed_delta INTEGER NOT NULL DEFAULT 0,
 			avg_lag INTEGER NOT NULL,
 			error_count_delta INTEGER NOT NULL,
 			PRIMARY KEY (job_id, timestamp)
@@ -329,10 +331,21 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 
 		// Migrate the data from replication_metrics to aggregated_metrics
 		_, err = db.Exec(`
-		INSERT INTO aggregated_metrics (job_id, timestamp, messages_replicated_delta, bytes_transferred_delta, avg_lag, error_count_delta)
+		INSERT INTO aggregated_metrics (
+			job_id,
+			timestamp,
+			messages_replicated_delta,
+			bytes_transferred_delta,
+			messages_consumed_delta,
+			bytes_consumed_delta,
+			avg_lag,
+			error_count_delta
+		)
 		SELECT
 			job_id,
 			strftime('%Y-%m-%d %H:%M:00', timestamp),
+			MAX(messages_replicated) - MIN(messages_replicated),
+			MAX(bytes_transferred) - MIN(bytes_transferred),
 			MAX(messages_replicated) - MIN(messages_replicated),
 			MAX(bytes_transferred) - MIN(bytes_transferred),
 			AVG(current_lag),
@@ -353,6 +366,48 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 		}
 	}
 
+	if err := ensureAggregatedMetricsColumns(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureAggregatedMetricsColumns(db *sqlx.DB) error {
+	existing := make(map[string]bool)
+	rows, err := db.Queryx("PRAGMA table_info(aggregated_metrics)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			ctype      string
+			notnull    int
+			dfltValue  interface{}
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &primaryKey); err != nil {
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !existing["messages_consumed_delta"] {
+		if _, err := db.Exec("ALTER TABLE aggregated_metrics ADD COLUMN messages_consumed_delta INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	if !existing["bytes_consumed_delta"] {
+		if _, err := db.Exec("ALTER TABLE aggregated_metrics ADD COLUMN bytes_consumed_delta INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

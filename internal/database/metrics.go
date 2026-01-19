@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package database
 
 import (
@@ -29,6 +28,8 @@ func InsertMetrics(db *sqlx.DB, metric *ReplicationMetric) error {
 	// Calculate deltas
 	messagesDelta := metric.MessagesReplicated - lastMetric.MessagesReplicated
 	bytesDelta := metric.BytesTransferred - lastMetric.BytesTransferred
+	consumedMessagesDelta := metric.MessagesConsumed - lastMetric.MessagesConsumed
+	consumedBytesDelta := metric.BytesConsumed - lastMetric.BytesConsumed
 	errorsDelta := metric.ErrorCount - lastMetric.ErrorCount
 
 	if messagesDelta < 0 {
@@ -37,14 +38,28 @@ func InsertMetrics(db *sqlx.DB, metric *ReplicationMetric) error {
 	if bytesDelta < 0 {
 		bytesDelta = metric.BytesTransferred
 	}
+	if consumedMessagesDelta < 0 {
+		consumedMessagesDelta = metric.MessagesConsumed
+	}
+	if consumedBytesDelta < 0 {
+		consumedBytesDelta = metric.BytesConsumed
+	}
 	if errorsDelta < 0 {
 		errorsDelta = metric.ErrorCount
 	}
 
 	// Insert into the aggregated table
-	query := `INSERT INTO aggregated_metrics (job_id, timestamp, messages_replicated_delta, bytes_transferred_delta, avg_lag, error_count_delta)
-			  VALUES (?, ?, ?, ?, ?, ?)`
-	_, err = db.Exec(query, metric.JobID, time.Now(), messagesDelta, bytesDelta, metric.CurrentLag, errorsDelta)
+	query := `INSERT INTO aggregated_metrics (
+			  job_id,
+			  timestamp,
+			  messages_replicated_delta,
+			  bytes_transferred_delta,
+			  messages_consumed_delta,
+			  bytes_consumed_delta,
+			  avg_lag,
+			  error_count_delta
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err = db.Exec(query, metric.JobID, time.Now(), messagesDelta, bytesDelta, consumedMessagesDelta, consumedBytesDelta, metric.CurrentLag, errorsDelta)
 	return err
 }
 
@@ -53,12 +68,16 @@ func GetLatestMetrics(db *sqlx.DB, jobID string) (*ReplicationMetric, error) {
 	var totals struct {
 		MessagesReplicated int `db:"messages_replicated"`
 		BytesTransferred   int `db:"bytes_transferred"`
+		MessagesConsumed   int `db:"messages_consumed"`
+		BytesConsumed      int `db:"bytes_consumed"`
 		ErrorCount         int `db:"error_count"`
 	}
 	totalsQuery := `
         SELECT
             COALESCE(SUM(messages_replicated_delta), 0) as messages_replicated,
             COALESCE(SUM(bytes_transferred_delta), 0) as bytes_transferred,
+            COALESCE(SUM(messages_consumed_delta), 0) as messages_consumed,
+            COALESCE(SUM(bytes_consumed_delta), 0) as bytes_consumed,
             COALESCE(SUM(error_count_delta), 0) as error_count
         FROM aggregated_metrics
         WHERE job_id = ?
@@ -80,6 +99,8 @@ func GetLatestMetrics(db *sqlx.DB, jobID string) (*ReplicationMetric, error) {
 		JobID:              jobID,
 		MessagesReplicated: totals.MessagesReplicated,
 		BytesTransferred:   totals.BytesTransferred,
+		MessagesConsumed:   totals.MessagesConsumed,
+		BytesConsumed:      totals.BytesConsumed,
 		ErrorCount:         totals.ErrorCount,
 		CurrentLag:         lastMetric.CurrentLag,
 		Timestamp:          lastMetric.Timestamp,

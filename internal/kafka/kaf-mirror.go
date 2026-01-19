@@ -273,6 +273,8 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 			// Use producer acked totals to avoid counting failed sends
 			totalMessages := producerMetrics.RecordsProduced
 			totalBytes := producerMetrics.BytesProduced
+			totalConsumed := consumerMetrics.RecordsProcessed
+			totalConsumedBytes := consumerMetrics.BytesProcessed
 			totalErrors := producerMetrics.ErrorCount
 			currentLag := consumerMetrics.ConsumerLag
 
@@ -357,10 +359,12 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 
 			metric := database.ReplicationMetric{
 				JobID:              jobID,
-				MessagesReplicated: int(totalMessages), // Total messages replicated (acked)
-				BytesTransferred:   int(totalBytes),    // Total bytes transferred (acked)
-				CurrentLag:         int(currentLag),    // Current consumer lag
-				ErrorCount:         int(totalErrors),   // Total errors
+				MessagesReplicated: int(totalMessages),      // Total messages replicated (acked)
+				BytesTransferred:   int(totalBytes),         // Total bytes transferred (acked)
+				MessagesConsumed:   int(totalConsumed),      // Total messages consumed
+				BytesConsumed:      int(totalConsumedBytes), // Total bytes consumed
+				CurrentLag:         int(currentLag),         // Current consumer lag
+				ErrorCount:         int(totalErrors),        // Total errors
 				Timestamp:          time.Now(),
 			}
 

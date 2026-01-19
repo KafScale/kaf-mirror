@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package metrics
 
 import (
@@ -26,6 +25,8 @@ type PrometheusSink struct {
 
 	messagesReplicated prometheus.Gauge
 	bytesTransferred   prometheus.Gauge
+	messagesConsumed   prometheus.Gauge
+	bytesConsumed      prometheus.Gauge
 	currentLag         prometheus.Gauge
 	errorCount         prometheus.Gauge
 }
@@ -40,6 +41,14 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 		Name: "kaf_mirror_bytes_transferred",
 		Help: "Number of bytes transferred.",
 	})
+	messagesConsumed := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_messages_consumed",
+		Help: "Number of messages consumed.",
+	})
+	bytesConsumed := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_bytes_consumed",
+		Help: "Number of bytes consumed.",
+	})
 	currentLag := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "kaf_mirror_current_lag",
 		Help: "Current consumer lag.",
@@ -50,7 +59,7 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 	})
 
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(messagesReplicated, bytesTransferred, currentLag, errorCount)
+	registry.MustRegister(messagesReplicated, bytesTransferred, messagesConsumed, bytesConsumed, currentLag, errorCount)
 
 	pusher := push.New(cfg.PushGateway, "kaf-mirror").Gatherer(registry)
 
@@ -58,6 +67,8 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 		pusher:             pusher,
 		messagesReplicated: messagesReplicated,
 		bytesTransferred:   bytesTransferred,
+		messagesConsumed:   messagesConsumed,
+		bytesConsumed:      bytesConsumed,
 		currentLag:         currentLag,
 		errorCount:         errorCount,
 	}, nil
@@ -67,6 +78,8 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 func (s *PrometheusSink) Send(metric database.ReplicationMetric) error {
 	s.messagesReplicated.Set(float64(metric.MessagesReplicated))
 	s.bytesTransferred.Set(float64(metric.BytesTransferred))
+	s.messagesConsumed.Set(float64(metric.MessagesConsumed))
+	s.bytesConsumed.Set(float64(metric.BytesConsumed))
 	s.currentLag.Set(float64(metric.CurrentLag))
 	s.errorCount.Set(float64(metric.ErrorCount))
 
