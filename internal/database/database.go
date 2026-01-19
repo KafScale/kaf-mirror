@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package database
 
 import (
@@ -174,6 +173,12 @@ func RunMigrations(db *sqlx.DB) error {
 		return err
 	}
 
+	// Migration 10: Add events view permission
+	err = addEventsViewPermission(db)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -206,6 +211,39 @@ func addMirrorProgressHistoryTable(db *sqlx.DB) error {
 			FOREIGN KEY (job_id) REFERENCES replication_jobs(id) ON DELETE CASCADE
 		);`)
 		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func addEventsViewPermission(db *sqlx.DB) error {
+	var permissionExists int
+	err := db.Get(&permissionExists, "SELECT COUNT(*) FROM permissions WHERE name='events:view'")
+	if err != nil {
+		return err
+	}
+	if permissionExists > 0 {
+		return nil
+	}
+
+	_, err = db.Exec("INSERT INTO permissions (name) VALUES ('events:view')")
+	if err != nil {
+		return err
+	}
+
+	roleNames := []string{"admin", "operator", "monitoring", "compliance"}
+	for _, role := range roleNames {
+		var roleID int
+		if err := db.Get(&roleID, "SELECT id FROM roles WHERE name = ?", role); err != nil {
+			continue
+		}
+		var permID int
+		if err := db.Get(&permID, "SELECT id FROM permissions WHERE name='events:view'"); err != nil {
+			return err
+		}
+		if _, err := db.Exec("INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES (?, ?)", roleID, permID); err != nil {
 			return err
 		}
 	}
@@ -281,6 +319,8 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 			timestamp DATETIME NOT NULL,
 			messages_replicated_delta INTEGER NOT NULL,
 			bytes_transferred_delta INTEGER NOT NULL,
+			messages_consumed_delta INTEGER NOT NULL DEFAULT 0,
+			bytes_consumed_delta INTEGER NOT NULL DEFAULT 0,
 			avg_lag INTEGER NOT NULL,
 			error_count_delta INTEGER NOT NULL,
 			PRIMARY KEY (job_id, timestamp)
@@ -291,10 +331,21 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 
 		// Migrate the data from replication_metrics to aggregated_metrics
 		_, err = db.Exec(`
-		INSERT INTO aggregated_metrics (job_id, timestamp, messages_replicated_delta, bytes_transferred_delta, avg_lag, error_count_delta)
+		INSERT INTO aggregated_metrics (
+			job_id,
+			timestamp,
+			messages_replicated_delta,
+			bytes_transferred_delta,
+			messages_consumed_delta,
+			bytes_consumed_delta,
+			avg_lag,
+			error_count_delta
+		)
 		SELECT
 			job_id,
 			strftime('%Y-%m-%d %H:%M:00', timestamp),
+			MAX(messages_replicated) - MIN(messages_replicated),
+			MAX(bytes_transferred) - MIN(bytes_transferred),
 			MAX(messages_replicated) - MIN(messages_replicated),
 			MAX(bytes_transferred) - MIN(bytes_transferred),
 			AVG(current_lag),
@@ -315,6 +366,48 @@ func addAggregatedMetricsTable(db *sqlx.DB) error {
 		}
 	}
 
+	if err := ensureAggregatedMetricsColumns(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureAggregatedMetricsColumns(db *sqlx.DB) error {
+	existing := make(map[string]bool)
+	rows, err := db.Queryx("PRAGMA table_info(aggregated_metrics)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			ctype      string
+			notnull    int
+			dfltValue  interface{}
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &primaryKey); err != nil {
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !existing["messages_consumed_delta"] {
+		if _, err := db.Exec("ALTER TABLE aggregated_metrics ADD COLUMN messages_consumed_delta INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
+	if !existing["bytes_consumed_delta"] {
+		if _, err := db.Exec("ALTER TABLE aggregated_metrics ADD COLUMN bytes_consumed_delta INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -462,13 +555,13 @@ func addMirrorStatePermissions(db *sqlx.DB) error {
 		// Get role IDs (gracefully handle missing roles)
 		var monitoringRoleID, operatorRoleID, adminRoleID int
 		var hasMonitoring, hasOperator, hasAdmin bool
-		
+
 		err = db.Get(&monitoringRoleID, "SELECT id FROM roles WHERE name='monitoring'")
 		hasMonitoring = (err == nil)
-		
+
 		err = db.Get(&operatorRoleID, "SELECT id FROM roles WHERE name='operator'")
 		hasOperator = (err == nil)
-		
+
 		err = db.Get(&adminRoleID, "SELECT id FROM roles WHERE name='admin'")
 		hasAdmin = (err == nil)
 

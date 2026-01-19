@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package database_test
 
 import (
@@ -79,6 +78,8 @@ func TestDatabase(t *testing.T) {
 			JobID:              jobID,
 			MessagesReplicated: 100,
 			BytesTransferred:   1000,
+			MessagesConsumed:   120,
+			BytesConsumed:      1400,
 			CurrentLag:         10,
 			ErrorCount:         0,
 			Timestamp:          time.Now().Add(-10 * time.Second),
@@ -90,6 +91,8 @@ func TestDatabase(t *testing.T) {
 			JobID:              jobID,
 			MessagesReplicated: 123,
 			BytesTransferred:   4560,
+			MessagesConsumed:   150,
+			BytesConsumed:      2000,
 			CurrentLag:         12,
 			ErrorCount:         1,
 			Timestamp:          time.Now(),
@@ -102,6 +105,8 @@ func TestDatabase(t *testing.T) {
 		assert.Len(t, metrics, 2)
 		assert.Equal(t, 23, metrics[1].MessagesReplicatedDelta)
 		assert.Equal(t, 3560, metrics[1].BytesTransferredDelta)
+		assert.Equal(t, 30, metrics[1].MessagesConsumedDelta)
+		assert.Equal(t, 600, metrics[1].BytesConsumedDelta)
 		assert.Equal(t, 1, metrics[1].ErrorCountDelta)
 	})
 

@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package config_test
 
 import (
@@ -24,8 +23,52 @@ func TestLoadConfig(t *testing.T) {
 	cfg, err := config.LoadConfig()
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
-	
+
 	// Basic validation of config structure
 	assert.NotEmpty(t, cfg.Server.Host)
 	assert.Greater(t, cfg.Server.Port, 0)
+	assert.Equal(t, 30, cfg.Database.RetentionDays)
+	assert.True(t, cfg.Compliance.Schedule.Enabled)
+	assert.Equal(t, 2, cfg.Compliance.Schedule.RunHour)
+	assert.True(t, cfg.Compliance.Schedule.Daily)
+	assert.Equal(t, "5m", cfg.Replication.TopicDiscoveryInterval)
+}
+
+func TestConfigValidate_RetentionBounds(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{Port: 8080},
+		Clusters: map[string]config.ClusterConfig{
+			"source": {Brokers: "localhost:9092"},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+	assert.Equal(t, 30, cfg.Database.RetentionDays)
+
+	cfg.Database.RetentionDays = 7
+	err = cfg.Validate()
+	assert.NoError(t, err)
+
+	cfg.Database.RetentionDays = 45
+	err = cfg.Validate()
+	assert.Error(t, err)
+
+	cfg.Database.RetentionDays = 7
+	cfg.Compliance.Schedule.Enabled = true
+	cfg.Compliance.Schedule.RunHour = 25
+	err = cfg.Validate()
+	assert.Error(t, err)
+
+	cfg.Compliance.Schedule.RunHour = 2
+	cfg.Compliance.Schedule.Daily = false
+	cfg.Compliance.Schedule.Weekly = false
+	cfg.Compliance.Schedule.Monthly = false
+	err = cfg.Validate()
+	assert.Error(t, err)
+
+	cfg.Compliance.Schedule.Enabled = false
+	cfg.Replication.TopicDiscoveryInterval = "-5m"
+	err = cfg.Validate()
+	assert.Error(t, err)
 }

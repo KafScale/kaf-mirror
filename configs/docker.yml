@@ -19,6 +19,15 @@ logging:
 
 database:
   path: "data/kaf-mirror.db"
+  retention_days: 30
+
+compliance:
+  schedule:
+    enabled: true
+    run_hour: 2
+    daily: true
+    weekly: false
+    monthly: false
 
 clusters:
   source:
@@ -37,6 +46,7 @@ replication:
   batch_size: 1000
   parallelism: 4
   compression: "none"
+  topic_discovery_interval: "5m"
 
 topics:
   - source: "demo-source"

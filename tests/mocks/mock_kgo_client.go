@@ -23,6 +23,7 @@ type MockKgoClient struct {
 	RequestFunc     func(context.Context, kmsg.Request) (kmsg.Response, error)
 	PollFetchesFunc func(context.Context) kgo.Fetches
 	ProduceFunc     func(context.Context, *kgo.Record, func(*kgo.Record, error))
+	AddConsumeTopicsFunc func(...string)
 	CloseFunc       func()
 }
 
@@ -43,6 +44,12 @@ func (m *MockKgoClient) PollFetches(ctx context.Context) kgo.Fetches {
 func (m *MockKgoClient) Produce(ctx context.Context, r *kgo.Record, f func(*kgo.Record, error)) {
 	if m.ProduceFunc != nil {
 		m.ProduceFunc(ctx, r, f)
+	}
+}
+
+func (m *MockKgoClient) AddConsumeTopics(topics ...string) {
+	if m.AddConsumeTopicsFunc != nil {
+		m.AddConsumeTopicsFunc(topics...)
 	}
 }
 

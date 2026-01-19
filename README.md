@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Core Replication Engine:** Built with `franz-go`, it handles consuming from a source Kafka cluster and producing to a target cluster based on defined topic mappings (exact and regex).
+- **Core Replication Engine:** Built with `franz-go`, it handles consuming from a source Kafka cluster and producing to a target cluster with same-name mirroring by default, plus optional exact/regex mappings.
 - **Enterprise Web Dashboard:** Professional tab-based interface with Operations, Health, Executive, and Compliance sections.
 - **Hybrid Configuration:** The application loads its base configuration from a `default.yml` file and stores runtime changes (like replication jobs) in a SQLite database.
 - **Comprehensive REST API:** A full-featured API built with Fiber provides endpoints for managing the application.
@@ -56,17 +56,17 @@ The UI/API will be at `http://localhost:8080`.
 
 The application is designed to be resilient to network issues and outages of the target cluster. It does not require a separate disk-based buffer for the following reasons:
 
-*   **Transient Network Issues:** The internal Kafka producer has an in-memory buffer and an automatic retry mechanism. This handles short-term network interruptions without data loss or duplication, thanks to its default idempotent configuration.
+*   **Transient Network Issues:** The internal Kafka producer has an in-memory buffer and an automatic retry mechanism. This handles short-term network interruptions without data loss or duplication, thanks to its idempotent producer configuration.
 *   **Prolonged Target Cluster Outages:** If the target cluster is unavailable for an extended period, the application will experience backpressure. The consumer will stop reading messages from the source cluster, and its consumer offset will not advance. The source Kafka cluster itself acts as the durable, large-scale buffer, retaining the data until the target cluster is available again. When the connection is restored, the application will resume mirroring from the last committed offset, ensuring no data is lost.
 
 **b) Data Retention Policy**
 
-To prevent the internal SQLite database from growing indefinitely, the application enforces a 7-day retention policy for the following data:
+To prevent the internal SQLite database from growing indefinitely, the application enforces a 30-day retention policy by default for the following data:
 
 *   **Replication Metrics:** Time-series data on throughput, lag, etc.
 *   **Operational Events:** Audit logs of all state-modifying actions.
 
-This data is automatically pruned every 24 hours.
+This data is automatically pruned every 24 hours. Admins can configure a shorter period via `database.retention_days` (1–30 days).
 
 **Optional) Building binaries on your host**
 
@@ -105,14 +105,14 @@ This will authenticate with the API and store a session token securely on your l
 **Configuration Management**
 
 - `./mirror-cli config get`: Get the current configuration from the server.
-- `./mirror-cli config set [config-file]`: Set the configuration on the server.
-- `./mirror-cli config configure`: Create or update the configuration file using an interactive wizard. (Requires admin role)
-- `./mirror-cli config edit`: Edit the configuration file in your default editor. (Requires admin role)
+- `./mirror-cli config save [file]`: Save a configuration file to the server. (Requires admin role)
+- `./mirror-cli config system`: Run the initial interactive configuration wizard. (Requires admin role)
+- `./mirror-cli config edit`: Edit configuration sections interactively. (Requires admin role)
 
 **Cluster Management**
 
 - `./mirror-cli clusters list`: Lists all configured Kafka clusters.
-- `./mirror-cli clusters add --name <cluster-name> --brokers <broker-list>`: Adds a new Kafka cluster.
+- `./mirror-cli clusters add`: Adds a new Kafka cluster with interactive prompts.
 - `./mirror-cli clusters remove <cluster-name>`: Marks a cluster as inactive. (Requires admin role)
 - `./mirror-cli clusters purge`: Purges all archived clusters. (Requires admin role)
 
@@ -124,19 +124,20 @@ This will authenticate with the API and store a session token securely on your l
   - Topic pattern support with wildcards (`user.*`, `events-*`)
   - Interactive topic selection or manual input
   - Comprehensive replication settings (batch size, parallelism, compression)
-  - Custom target topic name mapping
+  - Optional custom target topic mapping (exact or regex with capture substitution)
 - `./mirror-cli jobs start [job-id]`: Start paused or stopped replication jobs with interactive selection.
 - `./mirror-cli jobs stop [job-id]`: Stop running replication jobs with interactive selection.
 - `./mirror-cli jobs pause [job-id]`: Pause running replication jobs (resumable) with interactive selection.
 - `./mirror-cli jobs delete [job-id]`: Delete replication jobs with confirmation (admin only).
-- `./mirror-cli jobs status [job-id]`: Show detailed job status and performance metrics.
+- `./mirror-cli jobs status metrics [job-id]`: Show detailed job status and metrics.
+- `./mirror-cli jobs status full [job-id]`: Show full mirror state (progress, gaps, resume points).
 
 **User Management**
 
 - `./mirror-cli users list`: Lists all users. Requires `users:list` permission.
-- `./mirror-cli users add <username> --password <password> --role <role>`: Adds a new user. Requires `users:create` permission. Operators can only create users with the `monitoring` role.
+- `./mirror-cli users add`: Adds a new user with interactive prompts and generated password. Requires `users:create` permission. Operators can only create users with the `monitoring` role.
 - `./mirror-cli users set-role <username> <role>`: Sets a user's role. Requires `users:assign-roles` permission. Users cannot change their own role.
-- `./mirror-cli users reset-password [username]`: Reset another user's password and generate a new secure password. **Admin only**. Cannot reset own password.
+- `./mirror-cli users reset-password [username]`: Reset another user's password and generate a new secure password. **Admin only**. Cannot reset own password. The new password is written to a file (temp by default or `--password-file`).
 - `./mirror-cli users delete <username>`: Delete a user account. Requires `users:delete` permission.
 - `./mirror-cli whoami`: Displays information about the current user.
 - `./mirror-cli change-password`: Changes the current user's password.
@@ -166,8 +167,8 @@ TLS features include:
 
 The system supports multiple AI providers for operational intelligence:
 
-- `./bin/mirror-cli config edit ai provider`: Configure AI provider (OpenAI, Claude, Gemini, Grok, Custom)
-- `./bin/mirror-cli config edit ai model`: Set AI model for selected provider
+- `./mirror-cli config edit ai provider`: Configure AI provider (OpenAI, Claude, Gemini, Grok, Custom)
+- `./mirror-cli config edit ai model`: Set AI model for selected provider
 - Provider-specific configuration with API endpoints and credentials
 
 Supported AI Providers:
@@ -181,7 +182,7 @@ AI Features:
 - Automatic provider endpoint configuration
 - Secure API key management
 - Model selection with provider-specific options
-- Custom provider support for enterprise deployments
+- Custom provider support for enterprise deployments (OpenAI-compatible proxies should use `custom`)
 - API secret support for providers requiring dual authentication
 
 **Compliance Reporting**
@@ -201,6 +202,8 @@ Compliance features include:
 - Configuration change history
 - AI usage analytics
 - Performance metrics analysis
+
+Automated scheduling is controlled by `compliance.schedule` (daily/weekly/monthly) and runs at `run_hour` local time; weekly runs on Monday and monthly runs on the first day of the month.
 
 **c) `admin-cli`: Recovery**
 
@@ -400,7 +403,7 @@ Source Cluster                       Target Cluster
 ┌──────────────────────────────────────────┴───────┐
 │                    kaf-mirror                    │
 ├──────────────────────────────────────────────────┤
-│  Topic mapping (exact + regex patterns)          │
+│  Topic mapping (default mirror + regex patterns) │
 │  Job lifecycle (start / stop / pause)            │
 │  Consumer lag as architectural signal            │
 │  AI anomaly detection + tuning recommendations   │
@@ -416,7 +419,7 @@ The guide emphasizes treating lag as an architectural signal, not a metric to hi
 
 > "If the target cluster is unavailable, the consumer stops reading and its offset does not advance. The source Kafka cluster itself acts as the durable buffer. When restored, replication resumes from the last committed offset."
 
-No separate disk buffer. Kafka's retention *is* the buffer. This simplifies operations and maintains exactly-once semantics.
+No separate disk buffer. Kafka's retention *is* the buffer. This simplifies operations and supports at-least-once delivery with an idempotent producer (duplicates reduced, not transactional exactly-once across clusters).
 
 ### Key Capabilities
 
@@ -441,11 +444,6 @@ Primary DC                    DR Site / Analytics Region
 ```
 
 ---
-
-**Planning Kafka disaster recovery or cross-region replication?**
-
-→ [Consulting Services](https://www.novatechflow.com/p/consulting-services.html)  
-→ [Book a call](https://cal.com/alexanderalten)
 
 ## License
 

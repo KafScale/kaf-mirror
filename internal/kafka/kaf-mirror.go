@@ -9,7 +9,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 package kafka
 
 import (
@@ -38,13 +37,20 @@ type KafMirror interface {
 
 // KafMirrorImpl orchestrates the replication from a source to a target Kafka cluster.
 type KafMirrorImpl struct {
-	Consumer   *Consumer
-	Producer   *Producer
-	mappings   []config.TopicMapping
-	topicMap   map[string]string
-	regexMaps  []regexMapping
-	wg         sync.WaitGroup
-	cancelFunc context.CancelFunc
+	Consumer          *Consumer
+	Producer          *Producer
+	sourceCfg         config.ClusterConfig
+	targetCfg         config.ClusterConfig
+	mappings          []config.TopicMapping
+	topicMap          map[string]string
+	regexMaps         []regexMapping
+	targetPartitions  map[string]int32
+	mapMu             sync.RWMutex
+	wg                sync.WaitGroup
+	cancelFunc        context.CancelFunc
+	jobID             string
+	onPanic           func(jobID string, reason string)
+	discoveryInterval time.Duration
 
 	// Incident tracking to prevent spam logging
 	incidentStates map[string]bool
@@ -58,29 +64,13 @@ type regexMapping struct {
 
 // NewKafMirror creates a new replication orchestrator.
 func NewKafMirror(cfg *config.Config) (KafMirror, error) {
-	var topics []string
-	topicMap := make(map[string]string)
-	var regexMaps []regexMapping
-
-	for _, m := range cfg.Topics {
-		if !m.Enabled {
-			continue
-		}
-		// Check if the source is a regex
-		if isRegex(m.Source) {
-			re, err := regexp.Compile(m.Source)
-			if err != nil {
-				return nil, fmt.Errorf("invalid regex pattern %q: %w", m.Source, err)
-			}
-			regexMaps = append(regexMaps, regexMapping{regex: re, target: m.Target})
-		} else {
-			topics = append(topics, m.Source)
-			topicMap[m.Source] = m.Target
-		}
+	topics, topicMap, regexMaps, err := resolveTopicMappings(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate cluster compatibility and sync state before starting
-	err := validateAndSyncClusters(cfg, topics, topicMap)
+	targetPartitions, err := validateAndSyncClusters(cfg, topics, topicMap)
 	if err != nil {
 		return nil, fmt.Errorf("cluster validation failed: %w", err)
 	}
@@ -99,22 +89,28 @@ func NewKafMirror(cfg *config.Config) (KafMirror, error) {
 	}
 
 	return &KafMirrorImpl{
-		Consumer:       consumer,
-		Producer:       producer,
-		mappings:       cfg.Topics,
-		topicMap:       topicMap,
-		regexMaps:      regexMaps,
-		incidentStates: make(map[string]bool),
+		Consumer:          consumer,
+		Producer:          producer,
+		sourceCfg:         cfg.Clusters["source"],
+		targetCfg:         cfg.Clusters["target"],
+		mappings:          cfg.Topics,
+		topicMap:          topicMap,
+		regexMaps:         regexMaps,
+		targetPartitions:  targetPartitions,
+		discoveryInterval: discoveryInterval(cfg),
+		incidentStates:    make(map[string]bool),
 	}, nil
 }
 
 // Start begins the replication process.
 func (r *KafMirrorImpl) Start(jobID string, metricsCallback func(database.ReplicationMetric), onPanic func(jobID string, reason string)) {
-	logger.Info(fmt.Sprintf("[Job %s] Starting replication process", jobID))
-	logger.Info(fmt.Sprintf("[Job %s] Topic mappings: %v", jobID, r.topicMap))
+	logger.Info("[Job %s] Starting replication process", jobID)
+	logger.Info("[Job %s] Topic mappings: %v", jobID, r.topicMap)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancelFunc = cancel
+	r.jobID = jobID
+	r.onPanic = onPanic
 	r.wg.Add(2)
 
 	go func() {
@@ -122,16 +118,16 @@ func (r *KafMirrorImpl) Start(jobID string, metricsCallback func(database.Replic
 		defer func() {
 			if rec := recover(); rec != nil {
 				reason := fmt.Sprintf("consumer panic: %v", rec)
-				logger.Error(fmt.Sprintf("[Job %s] %s", jobID, reason))
+				logger.Error("[Job %s] %s", jobID, reason)
 				onPanic(jobID, reason)
 			}
 		}()
-		logger.Info(fmt.Sprintf("[Job %s] Starting consumer goroutine", jobID))
+		logger.Info("[Job %s] Starting consumer goroutine", jobID)
 		r.Consumer.Consume(ctx, func(record *kgo.Record) {
-			logger.Debug(fmt.Sprintf("[Job %s] Received record from topic %s, partition %d, offset %d", jobID, record.Topic, record.Partition, record.Offset))
+			logger.Debug("[Job %s] Received record from topic %s, partition %d, offset %d", jobID, record.Topic, record.Partition, record.Offset)
 			r.handleRecord(record)
 		})
-		logger.Info(fmt.Sprintf("[Job %s] Consumer goroutine ended", jobID))
+		logger.Info("[Job %s] Consumer goroutine ended", jobID)
 	}()
 
 	go func() {
@@ -139,16 +135,24 @@ func (r *KafMirrorImpl) Start(jobID string, metricsCallback func(database.Replic
 		defer func() {
 			if rec := recover(); rec != nil {
 				reason := fmt.Sprintf("metrics panic: %v", rec)
-				logger.Error(fmt.Sprintf("[Job %s] %s", jobID, reason))
+				logger.Error("[Job %s] %s", jobID, reason)
 				onPanic(jobID, reason)
 			}
 		}()
-		logger.Info(fmt.Sprintf("[Job %s] Starting metrics collection goroutine", jobID))
+		logger.Info("[Job %s] Starting metrics collection goroutine", jobID)
 		r.collectMetrics(ctx, jobID, metricsCallback, onPanic)
-		logger.Info(fmt.Sprintf("[Job %s] Metrics collection goroutine ended", jobID))
+		logger.Info("[Job %s] Metrics collection goroutine ended", jobID)
 	}()
 
-	logger.Info(fmt.Sprintf("[Job %s] Both goroutines started successfully", jobID))
+	if len(r.regexMaps) > 0 && r.discoveryInterval > 0 {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.discoverTopicsLoop(ctx)
+		}()
+	}
+
+	logger.Info("[Job %s] Both goroutines started successfully", jobID)
 }
 
 // Stop gracefully shuts down the kaf-mirror.
@@ -171,8 +175,15 @@ func (r *KafMirrorImpl) GetProducer() *Producer {
 	return r.Producer
 }
 
+// HandleRecordForTest exposes record handling for tests.
+func (r *KafMirrorImpl) HandleRecordForTest(record *kgo.Record) {
+	r.handleRecord(record)
+}
+
 func (r *KafMirrorImpl) handleRecord(record *kgo.Record) {
+	r.mapMu.RLock()
 	targetTopic, ok := r.topicMap[string(record.Topic)]
+	r.mapMu.RUnlock()
 	if !ok {
 		// Check regex mappings
 		for _, rm := range r.regexMaps {
@@ -194,16 +205,16 @@ func (r *KafMirrorImpl) handleRecord(record *kgo.Record) {
 	valueSize := len(record.Value)
 	keySize := len(record.Key)
 	totalSize := valueSize + keySize
-	
+
 	// Log message size analysis for AI recommendations (periodic sampling)
 	if totalSize > 0 {
 		// Sample every 100th message or messages > 2KB for compression analysis
 		if totalSize > 2048 || record.Offset%100 == 0 {
-			logger.InfoAI("message", "size", string(record.Topic), 
+			logger.InfoAI("message", "size", string(record.Topic),
 				"Message analysis: topic=%s, partition=%d, total_size=%d bytes, value_size=%d bytes, key_size=%d bytes - potential compression candidate",
 				record.Topic, record.Partition, totalSize, valueSize, keySize)
 		}
-		
+
 		// AI recommendation triggers
 		if totalSize > 5120 { // > 5KB
 			logger.InfoAI("compression", "recommendation", string(record.Topic),
@@ -223,6 +234,16 @@ func (r *KafMirrorImpl) handleRecord(record *kgo.Record) {
 		Key:     record.Key,
 		Headers: record.Headers,
 	}
+	r.mapMu.RLock()
+	partitionCount, hasPartitions := r.targetPartitions[targetTopic]
+	r.mapMu.RUnlock()
+	if hasPartitions && partitionCount > 0 {
+		if record.Partition < partitionCount {
+			outRecord.Partition = record.Partition
+		} else {
+			logger.Warn("Source partition %d exceeds target partitions %d for topic %s", record.Partition, partitionCount, targetTopic)
+		}
+	}
 
 	r.Producer.Produce(context.Background(), outRecord, func(rec *kgo.Record, err error) {
 		if err != nil {
@@ -237,8 +258,8 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	logger.Info(fmt.Sprintf("[Job %s] Metrics collection loop started", jobID))
-	
+	logger.Info("[Job %s] Metrics collection loop started", jobID)
+
 	// Counter for periodic logging (every 5th tick = ~50 seconds)
 	logCounter := 0
 
@@ -248,206 +269,326 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 			// Get current metrics from consumer and producer
 			consumerMetrics := r.Consumer.GetMetrics()
 			producerMetrics := r.Producer.GetMetrics()
-			
+
 			// Use producer acked totals to avoid counting failed sends
 			totalMessages := producerMetrics.RecordsProduced
 			totalBytes := producerMetrics.BytesProduced
+			totalConsumed := consumerMetrics.RecordsProcessed
+			totalConsumedBytes := consumerMetrics.BytesProcessed
 			totalErrors := producerMetrics.ErrorCount
 			currentLag := consumerMetrics.ConsumerLag
-			
+
 			// Detect performance disasters and incidents
 			logCounter++
-			
+
 			// Disaster detection thresholds
 			criticalLag := currentLag > 200
 			highErrorRate := totalErrors > 0 && totalMessages > 0 && (float64(totalErrors)/float64(totalMessages)) > 0.1
-			zeroThroughput := logCounter > 6 && totalMessages == 0 // No messages for 60+ seconds
+			sourceStalled := logCounter > 6 && totalConsumed == 0
+			targetStalled := logCounter > 6 && totalConsumed > 0 && totalMessages == 0
 			errorSpike := totalErrors > 0
-			
+
 			// Performance milestones (positive events)
-			isFirstMessage := totalMessages == 1 && logCounter <= 2
-			isSignificantMilestone := totalMessages > 0 && totalMessages%100 == 0
-			
+			isFirstProduced := totalMessages == 1 && logCounter <= 2
+			isSignificantProduced := totalMessages > 0 && totalMessages%100 == 0
+			isFirstConsumed := totalConsumed == 1 && logCounter <= 2
+			isSignificantConsumed := totalConsumed > 0 && totalConsumed%100 == 0
+
 			// Check for producer failure threshold
 			if producerMetrics.ConsecutiveErrors > 100 {
 				reason := fmt.Sprintf("producer has failed %d consecutive times", producerMetrics.ConsecutiveErrors)
-				logger.Error(fmt.Sprintf("[Job %s] %s", jobID, reason))
+				logger.Error("[Job %s] %s", jobID, reason)
 				onPanic(jobID, reason) // Use onPanic to trigger a shutdown
 				return
 			}
 
 			// Disaster logging with incident state tracking to prevent spam
 			r.incidentMutex.Lock()
-			
+
 			if criticalLag {
 				if !r.incidentStates["critical_lag"] {
-					logger.ErrorAI("disaster", "performance", jobID, "Critical lag detected: Messages=%d, Bytes=%d, Lag=%d, Errors=%d", 
+					logger.ErrorAI("disaster", "performance", jobID, "Critical lag detected: Messages=%d, Bytes=%d, Lag=%d, Errors=%d",
 						totalMessages, totalBytes, currentLag, totalErrors)
 					r.incidentStates["critical_lag"] = true
 				}
 			} else {
 				r.incidentStates["critical_lag"] = false
 			}
-			
+
 			if highErrorRate {
 				if !r.incidentStates["high_error_rate"] {
-					logger.ErrorAI("incident", "escalation", jobID, "High error rate detected: Messages=%d, Errors=%d, Rate=%.2f%%", 
+					logger.ErrorAI("incident", "escalation", jobID, "High error rate detected: Messages=%d, Errors=%d, Rate=%.2f%%",
 						totalMessages, totalErrors, (float64(totalErrors)/float64(totalMessages))*100)
 					r.incidentStates["high_error_rate"] = true
 				}
 			} else {
 				r.incidentStates["high_error_rate"] = false
 			}
-			
-			if zeroThroughput {
-				if !r.incidentStates["zero_throughput"] {
-					logger.WarnAI("incident", "start", jobID, "Zero throughput detected: No messages processed in 60+ seconds")
-					r.incidentStates["zero_throughput"] = true
+
+			if sourceStalled {
+				if !r.incidentStates["source_stalled"] {
+					logger.WarnAI("incident", "start", jobID, "Source stalled: No messages consumed in 60+ seconds")
+					r.incidentStates["source_stalled"] = true
 				}
-			} else {
-				// Reset incident state when throughput resumes
-				if r.incidentStates["zero_throughput"] {
-					logger.InfoAI("incident", "resolved", jobID, "Throughput resumed: Messages=%d, Bytes=%d", 
-						totalMessages, totalBytes)
-				}
-				r.incidentStates["zero_throughput"] = false
+			} else if r.incidentStates["source_stalled"] {
+				logger.InfoAI("incident", "resolved", jobID, "Source throughput resumed: Consumed=%d, Bytes=%d",
+					totalConsumed, totalConsumedBytes)
+				r.incidentStates["source_stalled"] = false
 			}
-			
+
+			if targetStalled {
+				if !r.incidentStates["target_stalled"] {
+					logger.WarnAI("incident", "start", jobID, "Target stalled: Consumed=%d, Produced=%d in 60+ seconds",
+						totalConsumed, totalMessages)
+					r.incidentStates["target_stalled"] = true
+				}
+			} else if r.incidentStates["target_stalled"] {
+				logger.InfoAI("incident", "resolved", jobID, "Target throughput resumed: Produced=%d, Bytes=%d",
+					totalMessages, totalBytes)
+				r.incidentStates["target_stalled"] = false
+			}
+
 			if errorSpike && logCounter%3 == 0 {
 				if !r.incidentStates["error_spike"] {
-					logger.ErrorAI("metrics", "errors", jobID, "Error spike detected: Messages=%d, Bytes=%d, Lag=%d, Errors=%d", 
+					logger.ErrorAI("metrics", "errors", jobID, "Error spike detected: Messages=%d, Bytes=%d, Lag=%d, Errors=%d",
 						totalMessages, totalBytes, currentLag, totalErrors)
 					r.incidentStates["error_spike"] = true
 				}
 			} else {
 				r.incidentStates["error_spike"] = false
 			}
-			
+
 			r.incidentMutex.Unlock()
-			
+
 			// Milestone logging (reduced frequency for normal operations)
-			if isFirstMessage {
-				logger.InfoAI("metrics", "milestone", jobID, "First message processed: Messages=%d, Bytes=%d, Lag=%d", 
+			if isFirstConsumed {
+				logger.InfoAI("metrics", "milestone", jobID, "First message consumed: Consumed=%d, Bytes=%d, Lag=%d",
+					totalConsumed, totalConsumedBytes, currentLag)
+			} else if isSignificantConsumed {
+				logger.InfoAI("metrics", "milestone", jobID, "Consumption milestone: Consumed=%d, Bytes=%d, Lag=%d",
+					totalConsumed, totalConsumedBytes, currentLag)
+			}
+
+			if isFirstProduced {
+				logger.InfoAI("metrics", "milestone", jobID, "First message produced: Produced=%d, Bytes=%d, Lag=%d",
 					totalMessages, totalBytes, currentLag)
-			} else if isSignificantMilestone {
-				logger.InfoAI("metrics", "milestone", jobID, "Processing milestone: Messages=%d, Bytes=%d, Lag=%d", 
+			} else if isSignificantProduced {
+				logger.InfoAI("metrics", "milestone", jobID, "Production milestone: Produced=%d, Bytes=%d, Lag=%d",
 					totalMessages, totalBytes, currentLag)
 			}
-			
+
 			metric := database.ReplicationMetric{
 				JobID:              jobID,
-				MessagesReplicated: int(totalMessages),  // Total messages replicated (acked)
-				BytesTransferred:   int(totalBytes),     // Total bytes transferred (acked)
-				CurrentLag:         int(currentLag),     // Current consumer lag
-				ErrorCount:         int(totalErrors),    // Total errors
+				MessagesReplicated: int(totalMessages),      // Total messages replicated (acked)
+				BytesTransferred:   int(totalBytes),         // Total bytes transferred (acked)
+				MessagesConsumed:   int(totalConsumed),      // Total messages consumed
+				BytesConsumed:      int(totalConsumedBytes), // Total bytes consumed
+				CurrentLag:         int(currentLag),         // Current consumer lag
+				ErrorCount:         int(totalErrors),        // Total errors
+				SourceStalled:      sourceStalled,
+				TargetStalled:      targetStalled,
+				CriticalLag:        criticalLag,
+				HighErrorRate:      highErrorRate,
+				ErrorSpike:         errorSpike,
 				Timestamp:          time.Now(),
 			}
-			
+
 			callback(metric)
 		case <-ctx.Done():
-			logger.Info(fmt.Sprintf("[Job %s] Metrics collection cancelled", jobID))
+			logger.Info("[Job %s] Metrics collection cancelled", jobID)
 			return
 		}
 	}
 }
 
+func resolveTopicMappings(cfg *config.Config) ([]string, map[string]string, []regexMapping, error) {
+	topics := make([]string, 0)
+	topicMap := make(map[string]string)
+	regexMaps := make([]regexMapping, 0)
+
+	for _, m := range cfg.Topics {
+		if !m.Enabled {
+			continue
+		}
+		targetPattern := m.Target
+		if targetPattern == "" {
+			targetPattern = m.Source
+		}
+		if isRegex(m.Source) {
+			re, err := regexp.Compile(m.Source)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid regex pattern %q: %w", m.Source, err)
+			}
+			if targetPattern == "" {
+				targetPattern = "$0"
+			}
+			regexMaps = append(regexMaps, regexMapping{regex: re, target: targetPattern})
+			continue
+		}
+		topics = append(topics, m.Source)
+		topicMap[m.Source] = targetPattern
+	}
+
+	if len(regexMaps) == 0 {
+		return topics, topicMap, regexMaps, nil
+	}
+
+	admin, err := adminClientFactory(cfg.Clusters["source"])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create source admin client: %w", err)
+	}
+	defer admin.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	sourceInfo, err := admin.GetClusterInfo(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to list source topics for regex mapping: %w", err)
+	}
+
+	targetToSource := make(map[string]string)
+	for sourceTopic, targetTopic := range topicMap {
+		targetToSource[targetTopic] = sourceTopic
+	}
+
+	topicsSeen := make(map[string]bool)
+	for _, topic := range topics {
+		topicsSeen[topic] = true
+	}
+
+	for _, rm := range regexMaps {
+		matched := false
+		for topicName := range sourceInfo.Topics {
+			if !rm.regex.MatchString(topicName) {
+				continue
+			}
+			matched = true
+			targetTopic := rm.regex.ReplaceAllString(topicName, rm.target)
+			if targetTopic == "" {
+				return nil, nil, nil, fmt.Errorf("regex mapping for %s produced empty target topic", topicName)
+			}
+			if existingTarget, ok := topicMap[topicName]; ok && existingTarget != targetTopic {
+				return nil, nil, nil, fmt.Errorf("topic %s matches multiple targets: %s and %s", topicName, existingTarget, targetTopic)
+			}
+			if existingSource, ok := targetToSource[targetTopic]; ok && existingSource != topicName {
+				return nil, nil, nil, fmt.Errorf("target topic %s is mapped from multiple sources: %s and %s", targetTopic, existingSource, topicName)
+			}
+			topicMap[topicName] = targetTopic
+			targetToSource[targetTopic] = topicName
+			if !topicsSeen[topicName] {
+				topics = append(topics, topicName)
+				topicsSeen[topicName] = true
+			}
+		}
+		if !matched {
+			logger.Warn("Regex mapping %s did not match any source topics", rm.regex.String())
+		}
+	}
+
+	return topics, topicMap, regexMaps, nil
+}
+
 // validateAndSyncClusters validates cluster compatibility and syncs state before replication
-func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[string]string) error {
+func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[string]string) (map[string]int32, error) {
 	logger.Info("Starting cluster validation and state synchronization")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	// Create admin clients for both clusters
-	sourceAdmin, err := NewAdminClient(cfg.Clusters["source"])
+	sourceAdmin, err := adminClientFactory(cfg.Clusters["source"])
 	if err != nil {
-		return fmt.Errorf("failed to create source admin client: %w", err)
+		return nil, fmt.Errorf("failed to create source admin client: %w", err)
 	}
 	defer sourceAdmin.Close()
 
-	targetAdmin, err := NewAdminClient(cfg.Clusters["target"])
+	targetAdmin, err := adminClientFactory(cfg.Clusters["target"])
 	if err != nil {
-		return fmt.Errorf("failed to create target admin client: %w", err)
+		return nil, fmt.Errorf("failed to create target admin client: %w", err)
 	}
 	defer targetAdmin.Close()
 
 	// Get cluster information
 	sourceInfo, err := sourceAdmin.GetClusterInfo(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get source cluster info: %w", err)
+		return nil, fmt.Errorf("failed to get source cluster info: %w", err)
 	}
 
 	targetInfo, err := targetAdmin.GetClusterInfo(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get target cluster info: %w", err)
+		return nil, fmt.Errorf("failed to get target cluster info: %w", err)
 	}
 
 	logger.InfoAI("cluster", "validation", "", "Source cluster: %d brokers, %d topics", sourceInfo.BrokerCount, len(sourceInfo.Topics))
 	logger.InfoAI("cluster", "validation", "", "Target cluster: %d brokers, %d topics", targetInfo.BrokerCount, len(targetInfo.Topics))
 
 	// Validate and sync each topic mapping
+	targetPartitions := make(map[string]int32)
 	for sourceTopic, targetTopic := range topicMap {
 		logger.InfoAI("topic", "validation", "", "Validating topic mapping: %s -> %s", sourceTopic, targetTopic)
-		
+
 		// Check if source topic exists
 		sourceTopicInfo, sourceExists := sourceInfo.Topics[sourceTopic]
 		if !sourceExists {
-			return fmt.Errorf("source topic %s does not exist", sourceTopic)
+			return nil, fmt.Errorf("source topic %s does not exist", sourceTopic)
 		}
 
 		// Ensure target topic exists with correct partitions
-		err = targetAdmin.EnsureTopicExists(ctx, targetTopic, sourceTopicInfo.Partitions, sourceTopicInfo.ReplicationFactor)
+		replicationFactor := clampReplicationFactor(sourceTopicInfo.ReplicationFactor, targetInfo.BrokerCount, sourceTopic)
+		err = ensureTopicWithRetry(ctx, targetAdmin, targetTopic, sourceTopicInfo.Partitions, replicationFactor)
 		if err != nil {
-			return fmt.Errorf("failed to ensure target topic %s exists: %w", targetTopic, err)
+			return nil, fmt.Errorf("failed to ensure target topic %s exists: %w", targetTopic, err)
 		}
 
 		// Re-fetch target info after potential topic creation
 		targetInfo, err = targetAdmin.GetClusterInfo(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to refresh target cluster info: %w", err)
+			return nil, fmt.Errorf("failed to refresh target cluster info: %w", err)
 		}
 
 		// Validate topic compatibility
 		targetTopicInfo, targetExists := targetInfo.Topics[targetTopic]
 		if !targetExists {
-			return fmt.Errorf("target topic %s does not exist after creation attempt", targetTopic)
+			return nil, fmt.Errorf("target topic %s does not exist after creation attempt", targetTopic)
 		}
 
 		err = targetAdmin.ValidateTopicCompatibility(ctx, sourceTopicInfo, targetTopicInfo)
 		if err != nil {
-			return fmt.Errorf("topic compatibility validation failed: %w", err)
+			return nil, fmt.Errorf("topic compatibility validation failed: %w", err)
 		}
+		targetPartitions[targetTopic] = targetTopicInfo.Partitions
 
 		// Detect and log compression settings
 		sourceCompression := detectTopicCompression(&sourceTopicInfo)
 		targetCompression := detectTopicCompression(&targetTopicInfo)
-		
-		logger.Info("Topic %s: %d partitions, replication factor %d, source compression: %s", 
+
+		logger.Info("Topic %s: %d partitions, replication factor %d, source compression: %s",
 			sourceTopic, sourceTopicInfo.Partitions, sourceTopicInfo.ReplicationFactor, sourceCompression)
 		logger.Info("Target topic %s: compression: %s", targetTopic, targetCompression)
-		
+
 		// Log compression compatibility
 		if sourceCompression != targetCompression {
 			if targetCompression == "NONE" && sourceCompression != "NONE" {
-				logger.WarnAI("compression", "mismatch", cfg.Replication.JobID, 
-					"Source topic '%s' uses %s compression but target '%s' has no compression - consider enabling %s on target for consistency", 
+				logger.WarnAI("compression", "mismatch", cfg.Replication.JobID,
+					"Source topic '%s' uses %s compression but target '%s' has no compression - consider enabling %s on target for consistency",
 					sourceTopic, sourceCompression, targetTopic, sourceCompression)
 			} else if sourceCompression == "NONE" && targetCompression != "NONE" {
 				logger.InfoAI("compression", "enhancement", cfg.Replication.JobID,
-					"Target topic '%s' uses %s compression while source '%s' has none - this may improve storage efficiency", 
+					"Target topic '%s' uses %s compression while source '%s' has none - this may improve storage efficiency",
 					targetTopic, targetCompression, sourceTopic)
 			} else if sourceCompression != "NONE" && targetCompression != "NONE" {
 				logger.InfoAI("compression", "different", cfg.Replication.JobID,
-					"Compression differs: source '%s' uses %s, target '%s' uses %s - performance may vary", 
+					"Compression differs: source '%s' uses %s, target '%s' uses %s - performance may vary",
 					sourceTopic, sourceCompression, targetTopic, targetCompression)
 			}
 		} else {
 			logger.InfoAI("compression", "matched", cfg.Replication.JobID,
 				"Compression settings matched: both using %s", sourceCompression)
 		}
-		
+
 		for _, partInfo := range sourceTopicInfo.PartitionInfo {
-			logger.Debug("Partition %d: Leader=%d, ISR=%v, Replicas=%v", 
+			logger.Debug("Partition %d: Leader=%d, ISR=%v, Replicas=%v",
 				partInfo.ID, partInfo.Leader, partInfo.ISR, partInfo.Replicas)
 		}
 	}
@@ -455,14 +596,14 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 	// Check current consumer group offsets using job-specific group
 	groupID := fmt.Sprintf("kaf-mirror-job-%s", cfg.Replication.JobID)
 	logger.Info("Checking consumer group offsets for group: %s", groupID)
-	
+
 	sourceOffsets, err := sourceAdmin.GetConsumerGroupOffsets(ctx, groupID, topics)
 	if err != nil {
 		logger.Warn("Failed to get source consumer group offsets (this is normal for new groups): %v", err)
 	} else {
 		for _, offsets := range sourceOffsets {
 			for _, offset := range offsets {
-				logger.Info("Source consumer offset - Topic: %s, Partition: %d, Offset: %d, Lag: %d", 
+				logger.Info("Source consumer offset - Topic: %s, Partition: %d, Offset: %d, Lag: %d",
 					offset.Topic, offset.Partition, offset.Offset, offset.Lag)
 			}
 		}
@@ -476,7 +617,7 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 		logger.Info("Source cluster high water marks:")
 		for _, offsets := range sourceHighWaterMarks {
 			for _, offset := range offsets {
-				logger.Info("Topic: %s, Partition: %d, High Water Mark: %d", 
+				logger.Info("Topic: %s, Partition: %d, High Water Mark: %d",
 					offset.Topic, offset.Partition, offset.HighWaterMark)
 			}
 		}
@@ -487,7 +628,7 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 	for _, targetTopic := range topicMap {
 		targetTopics = append(targetTopics, targetTopic)
 	}
-	
+
 	targetHighWaterMarks, err := targetAdmin.GetTopicHighWaterMarks(ctx, targetTopics)
 	if err != nil {
 		logger.Warn("Failed to get target high water marks: %v", err)
@@ -495,7 +636,7 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 		logger.Info("Target cluster high water marks:")
 		for _, offsets := range targetHighWaterMarks {
 			for _, offset := range offsets {
-				logger.Info("Topic: %s, Partition: %d, High Water Mark: %d", 
+				logger.Info("Topic: %s, Partition: %d, High Water Mark: %d",
 					offset.Topic, offset.Partition, offset.HighWaterMark)
 			}
 		}
@@ -508,7 +649,137 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 	}
 
 	logger.Info("Cluster validation and state synchronization completed successfully")
+	return targetPartitions, nil
+}
+
+func (r *KafMirrorImpl) discoverTopicsLoop(ctx context.Context) {
+	ticker := time.NewTicker(r.discoveryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := r.discoverAndSyncTopics(ctx); err != nil {
+				logger.Error("[Job %s] Topic discovery failed: %v", r.jobID, err)
+				if r.onPanic != nil {
+					r.onPanic(r.jobID, err.Error())
+				}
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (r *KafMirrorImpl) discoverAndSyncTopics(ctx context.Context) error {
+	sourceAdmin, err := adminClientFactory(r.sourceCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create source admin client: %w", err)
+	}
+	defer sourceAdmin.Close()
+
+	targetAdmin, err := adminClientFactory(r.targetCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create target admin client: %w", err)
+	}
+	defer targetAdmin.Close()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sourceInfo, err := sourceAdmin.GetClusterInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get source cluster info: %w", err)
+	}
+	targetInfo, err := targetAdmin.GetClusterInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get target cluster info: %w", err)
+	}
+
+	for _, rm := range r.regexMaps {
+		for sourceTopic, sourceTopicInfo := range sourceInfo.Topics {
+			if !rm.regex.MatchString(sourceTopic) {
+				continue
+			}
+			r.mapMu.RLock()
+			_, exists := r.topicMap[sourceTopic]
+			r.mapMu.RUnlock()
+			if exists {
+				continue
+			}
+
+			targetTopic := rm.regex.ReplaceAllString(sourceTopic, rm.target)
+			if targetTopic == "" {
+				return fmt.Errorf("regex mapping for %s produced empty target topic", sourceTopic)
+			}
+			r.mapMu.RLock()
+			for existingSource, existingTarget := range r.topicMap {
+				if existingTarget == targetTopic && existingSource != sourceTopic {
+					r.mapMu.RUnlock()
+					return fmt.Errorf("target topic %s is mapped from multiple sources: %s and %s", targetTopic, existingSource, sourceTopic)
+				}
+			}
+			r.mapMu.RUnlock()
+
+			replicationFactor := clampReplicationFactor(sourceTopicInfo.ReplicationFactor, targetInfo.BrokerCount, sourceTopic)
+			if err := ensureTopicWithRetry(ctx, targetAdmin, targetTopic, sourceTopicInfo.Partitions, replicationFactor); err != nil {
+				return fmt.Errorf("failed to ensure target topic %s exists after retries: %w", targetTopic, err)
+			}
+
+			r.mapMu.Lock()
+			r.topicMap[sourceTopic] = targetTopic
+			if r.targetPartitions == nil {
+				r.targetPartitions = make(map[string]int32)
+			}
+			r.targetPartitions[targetTopic] = sourceTopicInfo.Partitions
+			r.mapMu.Unlock()
+
+			r.Consumer.AddTopics(sourceTopic)
+			logger.Info("[Job %s] Discovered new topic mapping %s -> %s", r.jobID, sourceTopic, targetTopic)
+		}
+	}
+
 	return nil
+}
+
+func ensureTopicWithRetry(ctx context.Context, admin AdminClientAPI, topicName string, partitions int32, replicationFactor int16) error {
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := admin.EnsureTopicExists(ctx, topicName, partitions, replicationFactor); err != nil {
+			lastErr = err
+			logger.Warn("Failed to create target topic %s (attempt %d/5): %v", topicName, attempt, err)
+			time.Sleep(time.Duration(attempt) * time.Second)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("topic %s creation failed after 5 attempts: %w", topicName, lastErr)
+}
+
+func clampReplicationFactor(sourceRF int16, targetBrokerCount int, sourceTopic string) int16 {
+	if sourceRF <= 0 {
+		sourceRF = 1
+	}
+	if targetBrokerCount <= 0 {
+		return sourceRF
+	}
+	if int(sourceRF) > targetBrokerCount {
+		logger.Warn("Source topic %s replication factor %d exceeds target broker count %d; using %d", sourceTopic, sourceRF, targetBrokerCount, targetBrokerCount)
+		return int16(targetBrokerCount)
+	}
+	return sourceRF
+}
+
+func discoveryInterval(cfg *config.Config) time.Duration {
+	interval, err := time.ParseDuration(cfg.Replication.TopicDiscoveryInterval)
+	if err != nil {
+		return 5 * time.Minute
+	}
+	return interval
 }
 
 // CaptureJobInventory captures comprehensive inventory data when a job starts
@@ -531,7 +802,7 @@ func CaptureJobInventory(jobID string, cfg *config.Config, sourceInfo, targetInf
 		return fmt.Errorf("failed to capture source cluster inventory: %w", err)
 	}
 
-	// Capture target cluster inventory  
+	// Capture target cluster inventory
 	targetClusterID, err := captureClusterInventory(db, snapshotID, "target", cfg.Clusters["target"], targetInfo)
 	if err != nil {
 		return fmt.Errorf("failed to capture target cluster inventory: %w", err)
@@ -581,14 +852,14 @@ func CaptureJobInventory(jobID string, cfg *config.Config, sourceInfo, targetInf
 
 func captureClusterInventory(db *sqlx.DB, snapshotID int, clusterType string, clusterCfg config.ClusterConfig, clusterInfo *ClusterInfo) (int, error) {
 	cluster := database.ClusterInventory{
-		SnapshotID:   snapshotID,
-		ClusterType:  clusterType,
-		ClusterName:  fmt.Sprintf("%s-%s", clusterType, clusterCfg.Provider),
-		Provider:     clusterCfg.Provider,
-		Brokers:      clusterCfg.Brokers,
-		BrokerCount:  clusterInfo.BrokerCount,
-		TotalTopics:  len(clusterInfo.Topics),
-		ClusterID:    clusterInfo.ClusterID,
+		SnapshotID:  snapshotID,
+		ClusterType: clusterType,
+		ClusterName: fmt.Sprintf("%s-%s", clusterType, clusterCfg.Provider),
+		Provider:    clusterCfg.Provider,
+		Brokers:     clusterCfg.Brokers,
+		BrokerCount: clusterInfo.BrokerCount,
+		TotalTopics: len(clusterInfo.Topics),
+		ClusterID:   clusterInfo.ClusterID,
 	}
 
 	if clusterInfo.ControllerID >= 0 {
@@ -608,7 +879,7 @@ func captureClusterInventory(db *sqlx.DB, snapshotID int, clusterType string, cl
 func captureTopicInventories(db *sqlx.DB, clusterInventoryID int, clusterInfo *ClusterInfo) error {
 	for _, topicInfo := range clusterInfo.Topics {
 		configData, _ := json.Marshal(topicInfo.Config)
-		
+
 		// Extract compression type from topic configuration
 		compressionType := "NONE"
 		if topicInfo.Config != nil {
@@ -623,15 +894,15 @@ func captureTopicInventories(db *sqlx.DB, clusterInventoryID int, clusterInfo *C
 				}
 			}
 		}
-		
+
 		topic := database.TopicInventory{
 			ClusterInventoryID: clusterInventoryID,
-			TopicName:         topicInfo.Name,
-			PartitionCount:    int(topicInfo.Partitions),
-			ReplicationFactor: int(topicInfo.ReplicationFactor),
-			IsInternal:        strings.HasPrefix(topicInfo.Name, "__"),
-			CompressionType:   compressionType,
-			ConfigData:        string(configData),
+			TopicName:          topicInfo.Name,
+			PartitionCount:     int(topicInfo.Partitions),
+			ReplicationFactor:  int(topicInfo.ReplicationFactor),
+			IsInternal:         strings.HasPrefix(topicInfo.Name, "__"),
+			CompressionType:    compressionType,
+			ConfigData:         string(configData),
 		}
 
 		topicID, err := database.InsertTopicInventory(db, topic)
@@ -647,7 +918,7 @@ func captureTopicInventories(db *sqlx.DB, clusterInventoryID int, clusterInfo *C
 				TopicInventoryID: topicID,
 				PartitionID:      int(partInfo.ID),
 				ReplicaIDs:       replicaJSON,
-				IsrIDs:          isrJSON,
+				IsrIDs:           isrJSON,
 				HighWaterMark:    0,
 			}
 
@@ -693,11 +964,11 @@ func captureConsumerGroupInventory(db *sqlx.DB, snapshotID int, admin *AdminClie
 		for _, offset := range topicOffsets {
 			consumerOffset := database.ConsumerGroupOffset{
 				ConsumerGroupInventoryID: groupInventoryID,
-				TopicName:               offset.Topic,
-				PartitionID:             int(offset.Partition),
-				CurrentOffset:           offset.Offset,
-				HighWaterMark:          offset.HighWaterMark,
-				Lag:                    offset.Lag,
+				TopicName:                offset.Topic,
+				PartitionID:              int(offset.Partition),
+				CurrentOffset:            offset.Offset,
+				HighWaterMark:            offset.HighWaterMark,
+				Lag:                      offset.Lag,
 			}
 
 			err = database.InsertConsumerGroupOffset(db, consumerOffset)
@@ -713,7 +984,7 @@ func captureConsumerGroupInventory(db *sqlx.DB, snapshotID int, admin *AdminClie
 
 func captureConnectionInventory(db *sqlx.DB, snapshotID int, clusterCfg config.ClusterConfig, connectionType string) error {
 	var securityProtocol, saslMechanism, apiKeyPrefix string
-	
+
 	switch clusterCfg.Provider {
 	case "confluent":
 		securityProtocol = "SASL_SSL"
@@ -781,7 +1052,7 @@ func detectTopicCompression(topicInfo *TopicInfo) string {
 	if topicInfo.Config == nil {
 		return "NONE"
 	}
-	
+
 	if compType, exists := topicInfo.Config["compression.type"]; exists {
 		switch compType {
 		case "gzip", "snappy", "lz4", "zstd":
@@ -799,4 +1070,47 @@ func detectTopicCompression(topicInfo *TopicInfo) string {
 func isRegex(s string) bool {
 	// A simple check, can be improved.
 	return regexp.MustCompile(`[\.\*\+\?\{\}\(\)\[\]\^\$]`).MatchString(s)
+}
+
+type AdminClientAPI interface {
+	GetClusterInfo(ctx context.Context) (*ClusterInfo, error)
+	GetConsumerGroupOffsets(ctx context.Context, groupID string, topics []string) (map[string][]OffsetInfo, error)
+	GetTopicHighWaterMarks(ctx context.Context, topics []string) (map[string][]OffsetInfo, error)
+	EnsureTopicExists(ctx context.Context, topicName string, partitions int32, replicationFactor int16) error
+	ValidateTopicCompatibility(ctx context.Context, sourceInfo, targetInfo TopicInfo) error
+	Close()
+}
+
+var adminClientFactory = func(cfg config.ClusterConfig) (AdminClientAPI, error) {
+	return NewAdminClient(cfg)
+}
+
+// SetAdminClientFactoryForTest replaces the admin client factory and returns a restore func.
+func SetAdminClientFactoryForTest(factory func(config.ClusterConfig) (AdminClientAPI, error)) func() {
+	previous := adminClientFactory
+	adminClientFactory = factory
+	return func() {
+		adminClientFactory = previous
+	}
+}
+
+// ResolveTopicMappingsForTest exposes mapping resolution for tests.
+func ResolveTopicMappingsForTest(cfg *config.Config) ([]string, map[string]string, error) {
+	topics, topicMap, _, err := resolveTopicMappings(cfg)
+	return topics, topicMap, err
+}
+
+// NewKafMirrorImplForTest builds a minimal KafMirrorImpl for unit tests.
+func NewKafMirrorImplForTest(producer *Producer, topicMap map[string]string, targetPartitions map[string]int32) *KafMirrorImpl {
+	return &KafMirrorImpl{
+		Producer:         producer,
+		topicMap:         topicMap,
+		targetPartitions: targetPartitions,
+		incidentStates:   make(map[string]bool),
+	}
+}
+
+// ValidateAndSyncClustersForTest exposes cluster validation for unit tests.
+func ValidateAndSyncClustersForTest(cfg *config.Config, topics []string, topicMap map[string]string) (map[string]int32, error) {
+	return validateAndSyncClusters(cfg, topics, topicMap)
 }
