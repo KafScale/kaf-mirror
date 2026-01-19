@@ -123,9 +123,10 @@ type configData struct {
 		} `yaml:"cors"`
 	} `yaml:"server"`
 	Replication struct {
-		BatchSize   int    `yaml:"batch_size"`
-		Parallelism int    `yaml:"parallelism"`
-		Compression string `yaml:"compression"`
+		BatchSize              int    `yaml:"batch_size"`
+		Parallelism            int    `yaml:"parallelism"`
+		Compression            string `yaml:"compression"`
+		TopicDiscoveryInterval string `yaml:"topic_discovery_interval"`
 	} `yaml:"replication"`
 	Clusters map[string]struct {
 		Brokers  string `yaml:"brokers"`
@@ -2206,6 +2207,11 @@ func configureReplication(configData *configData) {
 		{
 			Name:     "replication.compression",
 			Prompt:   &survey.Select{Message: "Select replication compression:", Options: []string{"none", "gzip", "snappy", "lz4", "zstd"}},
+			Validate: survey.Required,
+		},
+		{
+			Name:     "replication.topic_discovery_interval",
+			Prompt:   &survey.Input{Message: "Enter topic discovery interval (0 to disable):", Default: "5m"},
 			Validate: survey.Required,
 		},
 	}
@@ -5301,13 +5307,15 @@ func createConfigEditCommand() *cobra.Command {
 
 	serverCmd := createServerEditCommands()
 
+	replicationCmd := createReplicationEditCommands()
+
 	monitoringCmd := createMonitoringEditCommands()
 
 	complianceCmd := createComplianceEditCommands()
 
 	aiCmd := createAIEditCommands()
 
-	editCmd.AddCommand(serverCmd, monitoringCmd, complianceCmd, aiCmd)
+	editCmd.AddCommand(serverCmd, replicationCmd, monitoringCmd, complianceCmd, aiCmd)
 	return editCmd
 }
 
@@ -5458,7 +5466,7 @@ func createReplicationEditCommands() *cobra.Command {
 	replicationCmd := &cobra.Command{
 		Use:   "replication",
 		Short: "Configure replication settings",
-		Long:  "Configure batch size, parallelism, and compression",
+		Long:  "Configure batch size, parallelism, compression, and topic discovery interval",
 	}
 
 	// config edit replication batch-size [size]
@@ -5523,7 +5531,27 @@ func createReplicationEditCommands() *cobra.Command {
 		},
 	}
 
-	replicationCmd.AddCommand(batchSizeCmd, parallelismCmd, compressionCmd)
+	// config edit replication discovery-interval [duration]
+	discoveryIntervalCmd := &cobra.Command{
+		Use:   "discovery-interval [duration]",
+		Short: "Set topic discovery interval",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			var interval string
+			if len(args) > 0 {
+				interval = args[0]
+			} else {
+				prompt := &survey.Input{
+					Message: "Enter topic discovery interval (e.g., 5m, 30s, 0 to disable):",
+					Default: "5m",
+				}
+				survey.AskOne(prompt, &interval)
+			}
+			updateConfigParameter("replication.topic_discovery_interval", interval)
+		},
+	}
+
+	replicationCmd.AddCommand(batchSizeCmd, parallelismCmd, compressionCmd, discoveryIntervalCmd)
 	return replicationCmd
 }
 

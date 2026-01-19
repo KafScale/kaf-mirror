@@ -445,11 +445,6 @@ Primary DC                    DR Site / Analytics Region
 
 ---
 
-**Planning Kafka disaster recovery or cross-region replication?**
-
-→ [Consulting Services](https://www.novatechflow.com/p/consulting-services.html)  
-→ [Book a call](https://cal.com/alexanderalten)
-
 ## License
 
 Apache License 2.0. See `LICENSE` for details.

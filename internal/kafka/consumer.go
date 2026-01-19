@@ -249,3 +249,11 @@ func (c *Consumer) Close() {
 	logger.Info("Consumer is shutting down, job=%s, component=%s", c.jobID, "consumer")
 	c.Client.Close()
 }
+
+// AddTopics adds new topics to the consumer group subscription.
+func (c *Consumer) AddTopics(topics ...string) {
+	if len(topics) == 0 {
+		return
+	}
+	c.Client.AddConsumeTopics(topics...)
+}

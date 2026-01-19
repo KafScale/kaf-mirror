@@ -31,6 +31,7 @@ func TestLoadConfig(t *testing.T) {
 	assert.True(t, cfg.Compliance.Schedule.Enabled)
 	assert.Equal(t, 2, cfg.Compliance.Schedule.RunHour)
 	assert.True(t, cfg.Compliance.Schedule.Daily)
+	assert.Equal(t, "5m", cfg.Replication.TopicDiscoveryInterval)
 }
 
 func TestConfigValidate_RetentionBounds(t *testing.T) {
@@ -63,6 +64,11 @@ func TestConfigValidate_RetentionBounds(t *testing.T) {
 	cfg.Compliance.Schedule.Daily = false
 	cfg.Compliance.Schedule.Weekly = false
 	cfg.Compliance.Schedule.Monthly = false
+	err = cfg.Validate()
+	assert.Error(t, err)
+
+	cfg.Compliance.Schedule.Enabled = false
+	cfg.Replication.TopicDiscoveryInterval = "-5m"
 	err = cfg.Validate()
 	assert.Error(t, err)
 }

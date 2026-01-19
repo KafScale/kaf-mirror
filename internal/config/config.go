@@ -91,10 +91,11 @@ type SecurityConfig struct {
 
 // ReplicationConfig defines replication parameters
 type ReplicationConfig struct {
-	BatchSize   int    `mapstructure:"batch_size"`
-	Parallelism int    `mapstructure:"parallelism"`
-	Compression string `mapstructure:"compression"`
-	JobID       string `mapstructure:"job_id"`
+	BatchSize              int    `mapstructure:"batch_size"`
+	Parallelism            int    `mapstructure:"parallelism"`
+	Compression            string `mapstructure:"compression"`
+	JobID                  string `mapstructure:"job_id"`
+	TopicDiscoveryInterval string `mapstructure:"topic_discovery_interval"`
 }
 
 // TopicMapping defines a single source-to-target topic mapping
@@ -128,6 +129,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Database.RetentionDays > 30 {
 		return fmt.Errorf("database retention_days must be between 1 and 30")
+	}
+	if c.Replication.TopicDiscoveryInterval == "" {
+		c.Replication.TopicDiscoveryInterval = "5m"
+	}
+	interval, err := time.ParseDuration(c.Replication.TopicDiscoveryInterval)
+	if err != nil {
+		return fmt.Errorf("replication topic_discovery_interval must be a valid duration: %v", err)
+	}
+	if interval < 0 {
+		return fmt.Errorf("replication topic_discovery_interval must be non-negative")
 	}
 	if c.Compliance.Schedule.RunHour < 0 || c.Compliance.Schedule.RunHour > 23 {
 		return fmt.Errorf("compliance schedule run_hour must be between 0 and 23")
@@ -228,6 +239,9 @@ func LoadConfig() (*Config, error) {
 	}
 	if AppConfig.Database.RetentionDays > 30 {
 		AppConfig.Database.RetentionDays = 30
+	}
+	if AppConfig.Replication.TopicDiscoveryInterval == "" {
+		AppConfig.Replication.TopicDiscoveryInterval = "5m"
 	}
 	applyComplianceDefaults(&AppConfig)
 

@@ -46,6 +46,7 @@ replication:
   batch_size: 1000
   parallelism: 4
   compression: "none"
+  topic_discovery_interval: "5m"
 
 topics:
   - source: "demo-source"

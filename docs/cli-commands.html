@@ -5,203 +5,174 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CLI Command Reference - kaf-mirror</title>
     <style>
-        :root {
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
-            --background-color: #f8f9fa;
-            --card-background: #ffffff;
-            --text-color: #34495e;
-            --header-text-color: #ffffff;
-            --nav-link-color: #566573;
-            --nav-link-hover-bg: #eef2f7;
-            --nav-link-active-bg: #e2e8f0;
-            --nav-link-active-color: #2c3e50;
-            --code-bg: #2d3748;
-            --code-color: #e2e8f0;
-            --border-color: #e2e8f0;
-        }
         * {
             box-sizing: border-box;
         }
-        html {
-            scroll-behavior: smooth;
-        }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; 
-            line-height: 1.6;
+            line-height: 1.5;
             margin: 0;
             padding: 0;
-            color: var(--text-color);
-            background-color: var(--background-color);
+            color: #2d3748;
+            background-color: #f7fafc;
         }
         .container {
             display: flex;
             min-height: 100vh;
         }
         .sidebar {
-            width: 300px;
-            background: var(--card-background);
-            border-right: 1px solid var(--border-color);
-            padding: 25px;
+            width: 280px;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
+            padding: 20px;
             position: fixed;
             height: 100vh;
             overflow-y: auto;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.1);
         }
-        .sidebar .logo {
-            font-size: 1.5rem;
+        .sidebar h2 {
+            font-size: 1.25rem;
             font-weight: 600;
-            color: var(--primary-color);
-            margin: 0 0 25px 0;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--primary-color);
+            color: #2d3748;
+            margin: 0 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #4299e1;
         }
         .sidebar ul {
             list-style: none;
             padding: 0;
             margin: 0;
         }
+        .sidebar li {
+            margin: 0;
+        }
         .sidebar a {
             display: block;
             padding: 8px 12px;
-            color: var(--nav-link-color);
+            color: #4a5568;
             text-decoration: none;
             border-radius: 6px;
             font-size: 0.9rem;
             transition: all 0.2s ease;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
         .sidebar a:hover {
-            background-color: var(--nav-link-hover-bg);
+            background-color: #edf2f7;
+            color: #2b6cb0;
         }
-        .sidebar a.active {
-            background-color: var(--nav-link-active-bg);
-            color: var(--nav-link-active-color);
+        .sidebar .level-1 {
             font-weight: 500;
+            padding-left: 12px;
         }
-        .sidebar .level-1 { font-weight: 500; }
-        .sidebar .level-2 { padding-left: 1.5rem; }
-        .sidebar .level-3 { padding-left: 3rem; }
-        .sidebar .level-4 { padding-left: 4.5rem; }
-        .sidebar .level-5 { padding-left: 6rem; }
-
+        .sidebar .level-2 {
+            padding-left: 24px;
+            font-size: 0.85rem;
+        }
+        .sidebar .level-3 {
+            padding-left: 36px;
+            font-size: 0.8rem;
+            color: #718096;
+        }
         .content {
             flex: 1;
-            margin-left: 300px;
-            padding: 40px;
-            max-width: calc(100% - 300px);
+            margin-left: 280px;
+            padding: 40px 40px 40px 60px;
+            max-width: calc(100% - 280px);
+            background: white;
         }
-        .command-card {
-            background: var(--card-background);
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            margin-bottom: 40px;
-            padding: 30px;
-            border-top: 4px solid var(--primary-color);
+        .content h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin: 0 0 20px 0;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #4299e1;
+        }
+        .content h2 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin: 40px 0 15px 0;
+            padding-left: 15px;
+            border-left: 4px solid #4299e1;
             scroll-margin-top: 20px;
         }
-        .command-card h1 {
-            font-size: 2rem;
-            font-weight: 600;
-            color: var(--text-color);
-            margin: 0 0 10px 0;
-        }
-        .command-card h2 {
-            font-size: 2rem;
-            font-weight: 600;
-            color: var(--text-color);
-            margin: 0 0 10px 0;
-        }
-        .command-card h3 {
-            font-size: 1.5rem;
+        .content h3 {
+            font-size: 1.25rem;
             font-weight: 500;
-            color: var(--secondary-color);
-            margin: 30px 0 15px 0;
-            padding-bottom: 5px;
-            border-bottom: 1px solid var(--border-color);
+            color: #4a5568;
+            margin: 25px 0 10px 0;
+            scroll-margin-top: 20px;
         }
-        .command-card h4 {
-            font-size: 1.2rem;
-            font-weight: 500;
-            color: var(--text-color);
-            margin: 20px 0 10px 0;
-        }
-        .command-card h5 {
+        .content h4 {
             font-size: 1.1rem;
             font-weight: 500;
-            color: var(--text-color);
-            margin: 20px 0 10px 0;
+            color: #718096;
+            margin: 20px 0 8px 0;
+            scroll-margin-top: 20px;
         }
-        .command-card h6 {
+        .content h5, .content h6 {
             font-size: 1rem;
             font-weight: 500;
-            color: var(--text-color);
-            margin: 20px 0 10px 0;
+            color: #a0aec0;
+            margin: 15px 0 8px 0;
+            scroll-margin-top: 20px;
         }
-        .command-card p {
-            margin: 10px 0;
-            color: var(--text-color);
+        .content p {
+            margin: 8px 0;
+            color: #4a5568;
+            line-height: 1.6;
         }
-        .command-card pre {
-            background-color: var(--code-bg);
-            color: var(--code-color);
-            padding: 15px;
-            border-radius: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 1em;
-            margin: 15px 0;
-            white-space: pre-wrap;
-            word-break: break-all;
-            overflow-x: auto;
+        .content strong {
+            color: #2d3748;
+            font-weight: 600;
         }
-        .command-card code {
-            background-color: var(--code-bg);
-            color: var(--code-color);
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 0.9em;
-        }
-        .command-card .usage {
-            background-color: var(--code-bg);
-            color: var(--code-color);
-            padding: 15px;
-            border-radius: 6px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 1em;
-            margin: 15px 0;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-        .command-card .flags-list {
-            list-style: none;
-            padding: 0;
-            margin: 10px 0;
-        }
-        .command-card .flags-list li {
-            background-color: var(--background-color);
-            padding: 10px;
+        .content code {
+            background-color: #edf2f7;
+            color: #d53f8c;
+            padding: 2px 6px;
             border-radius: 4px;
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 1em;
-            margin-bottom: 8px;
-            border-left: 3px solid var(--secondary-color);
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+            font-size: 0.85em;
         }
-        .command-card .description {
-            margin: 15px 0;
-            padding: 15px;
-            background: #fdfdff;
-            border-left: 3px solid var(--primary-color);
-            border-radius: 4px;
-        }
-        .footer {
-            text-align: center;
+        .content pre {
+            background-color: #2d3748;
+            color: #e2e8f0;
             padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
             font-size: 0.9em;
-            color: #7f8c8d;
+            margin: 15px 0;
+            border: 1px solid #4a5568;
         }
-        @media (max-width: 900px) {
+        .content pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+        .content ul {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+        .content li {
+            margin: 4px 0;
+            color: #4a5568;
+        }
+        .content hr {
+            border: none;
+            height: 1px;
+            background: linear-gradient(to right, #e2e8f0, #cbd5e0, #e2e8f0);
+            margin: 40px 0;
+        }
+        .section-divider {
+            margin: 30px 0;
+            padding: 15px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        html {
+            scroll-behavior: smooth;
+        }
+        @media (max-width: 768px) {
             .sidebar {
                 display: none;
             }
@@ -216,11 +187,12 @@
 <body>
     <div class="container">
         <nav class="sidebar">
-            <div class="logo">CLI Reference</div>
-            <ul id="nav-list"></ul>
+            <h2>Commands</h2>
+            <ul id="nav-list">
+            </ul>
         </nav>
         <main class="content">
-<div class="command-card" id="mirror-cli"><h1 id="mirror-cli">mirror-cli</h1>
+<li><a href="#mirror-cli" class="level-1">mirror-cli</a></li><li><a href="#description" class="level-2">Description</a></li><li><a href="#global-options" class="level-2">Global Options</a></li><li><a href="#available-commands" class="level-2">Available Commands</a></li><li><a href="#mirror-cli-clusters" class="level-3">mirror-cli clusters</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-config" class="level-3">mirror-cli config</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-dashboard" class="level-3">mirror-cli dashboard</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-docs" class="level-3">mirror-cli docs</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#options" class="level-3">Options</a></li><li><a href="#mirror-cli-jobs" class="level-3">mirror-cli jobs</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#options" class="level-3">Options</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-login" class="level-3">mirror-cli login</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#options" class="level-3">Options</a></li><li><a href="#mirror-cli-logout" class="level-3">mirror-cli logout</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-tls" class="level-3">mirror-cli tls</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-users" class="level-3">mirror-cli users</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#available-subcommands" class="level-3">Available Subcommands</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#options" class="level-3">Options</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#usage" class="level-3">Usage</a></li><li><a href="#mirror-cli-whoami" class="level-3">mirror-cli whoami</a></li><li><a href="#usage" class="level-3">Usage</a></li><h1 id="mirror-cli">mirror-cli</h1>
 <br>
 <p>A CLI for managing kaf-mirror.</p>
 <br>
@@ -229,9 +201,15 @@
 <p>mirror-cli is a command-line tool for managing kaf-mirror.</p>
 <p>It interacts with the kaf-mirror API to perform various tasks.</p>
 <br>
+<h2 id="global-options">Global Options</h2>
+<br>
+<pre><code>  -, --mirror-url string   URL of the kaf-mirror backend. (default &#34;http://localhost:8080&#34;)
+  -v, --version   Print the version and exit
+</pre>
+<br>
 <h2 id="available-commands">Available Commands</h2>
 <br>
-</div><div class="command-card" id="mirror-cli-clusters"><h3 id="mirror-cli-clusters">mirror-cli clusters</h3>
+<h3 id="mirror-cli-clusters">mirror-cli clusters</h3>
 <br>
 <p><strong>Manage clusters.</strong></p>
 <br>
@@ -240,15 +218,17 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
 <li><strong>add</strong> - Add a new cluster.</li>
+<li><strong>edit</strong> - Edit an existing cluster.</li>
 <li><strong>list</strong> - List all clusters.</li>
 <li><strong>purge</strong> - Purge archived clusters.</li>
 <li><strong>remove</strong> - Mark a cluster for deletion.</li>
 <li><strong>restore</strong> - Restore an inactive cluster.</li>
+<li><strong>test</strong> - Test connection to a cluster.</li>
 <br>
 <h4 id="mirror-cli-clusters-add">mirror-cli clusters add</h4>
 <br>
@@ -259,7 +239,18 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters add
-</code></pre>
+</pre>
+<br>
+<h4 id="mirror-cli-clusters-edit">mirror-cli clusters edit</h4>
+<br>
+<p><strong>Edit an existing cluster.</strong></p>
+<br>
+<p>This command allows you to edit the name and brokers of an existing Kafka cluster.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli clusters edit [name]
+</pre>
 <br>
 <h4 id="mirror-cli-clusters-list">mirror-cli clusters list</h4>
 <br>
@@ -270,7 +261,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters list
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-clusters-purge">mirror-cli clusters purge</h4>
 <br>
@@ -281,7 +272,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters purge
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-clusters-remove">mirror-cli clusters remove</h4>
 <br>
@@ -292,7 +283,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters remove [name]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-clusters-restore">mirror-cli clusters restore</h4>
 <br>
@@ -303,9 +294,20 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli clusters restore [name]
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-config"><h3 id="mirror-cli-config">mirror-cli config</h3>
+<h4 id="mirror-cli-clusters-test">mirror-cli clusters test</h4>
+<br>
+<p><strong>Test connection to a cluster.</strong></p>
+<br>
+<p>This command tests the connection to a specified Kafka cluster and provides detailed diagnostics.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli clusters test [name]
+</pre>
+<br>
+<h3 id="mirror-cli-config">mirror-cli config</h3>
 <br>
 <p><strong>Manage application configuration</strong></p>
 <br>
@@ -314,7 +316,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -332,12 +334,14 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
 <li><strong>ai</strong> - Configure AI settings</li>
+<li><strong>compliance</strong> - Configure compliance reporting schedule</li>
 <li><strong>monitoring</strong> - Configure monitoring settings</li>
+<li><strong>replication</strong> - Configure replication settings</li>
 <li><strong>server</strong> - Configure server settings</li>
 <br>
 <h5 id="mirror-cli-config-edit-ai">mirror-cli config edit ai</h5>
@@ -349,7 +353,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -357,6 +361,7 @@
 <li><strong>manage</strong> - Manage AI configuration interactively</li>
 <li><strong>model</strong> - Set AI model</li>
 <li><strong>provider</strong> - Set AI provider and configure endpoints</li>
+<li><strong>self-healing</strong> - Configure AI self-healing features</li>
 <li><strong>test-and-enable</strong> - Test AI connection and automatically enable all features</li>
 <br>
 <h6 id="mirror-cli-config-edit-ai-features">mirror-cli config edit ai features</h6>
@@ -368,7 +373,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai features
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-ai-manage">mirror-cli config edit ai manage</h6>
 <br>
@@ -379,7 +384,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai manage
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-ai-model">mirror-cli config edit ai model</h6>
 <br>
@@ -388,7 +393,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai model [model]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-ai-provider">mirror-cli config edit ai provider</h6>
 <br>
@@ -397,7 +402,18 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai provider [provider]
-</code></pre>
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-ai-self-healing">mirror-cli config edit ai self-healing</h6>
+<br>
+<p><strong>Configure AI self-healing features</strong></p>
+<br>
+<p>Enable or disable automated remediation and dynamic throttling.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit ai self-healing
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-ai-test-and-enable">mirror-cli config edit ai test-and-enable</h6>
 <br>
@@ -408,7 +424,81 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit ai test-and-enable
-</code></pre>
+</pre>
+<br>
+<h5 id="mirror-cli-config-edit-compliance">mirror-cli config edit compliance</h5>
+<br>
+<p><strong>Configure compliance reporting schedule</strong></p>
+<br>
+<p>Configure automated compliance report scheduling</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance
+</pre>
+<br>
+<h3 id="available-subcommands">Available Subcommands</h3>
+<br>
+<li><strong>daily</strong> - Enable or disable daily compliance reports</li>
+<li><strong>enabled</strong> - Enable or disable compliance scheduling</li>
+<li><strong>manage</strong> - Manage compliance scheduling interactively</li>
+<li><strong>monthly</strong> - Enable or disable monthly compliance reports (1st of month)</li>
+<li><strong>run-hour</strong> - Set report run hour (0-23 local time)</li>
+<li><strong>weekly</strong> - Enable or disable weekly compliance reports (Monday)</li>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-daily">mirror-cli config edit compliance daily</h6>
+<br>
+<p><strong>Enable or disable daily compliance reports</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance daily [value]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-enabled">mirror-cli config edit compliance enabled</h6>
+<br>
+<p><strong>Enable or disable compliance scheduling</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance enabled [value]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-manage">mirror-cli config edit compliance manage</h6>
+<br>
+<p><strong>Manage compliance scheduling interactively</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance manage
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-monthly">mirror-cli config edit compliance monthly</h6>
+<br>
+<p><strong>Enable or disable monthly compliance reports (1st of month)</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance monthly [value]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-run-hour">mirror-cli config edit compliance run-hour</h6>
+<br>
+<p><strong>Set report run hour (0-23 local time)</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance run-hour [hour]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-compliance-weekly">mirror-cli config edit compliance weekly</h6>
+<br>
+<p><strong>Enable or disable weekly compliance reports (Monday)</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit compliance weekly [value]
+</pre>
 <br>
 <h5 id="mirror-cli-config-edit-monitoring">mirror-cli config edit monitoring</h5>
 <br>
@@ -419,7 +509,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit monitoring
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -434,7 +524,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit monitoring enabled [value]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-monitoring-manage">mirror-cli config edit monitoring manage</h6>
 <br>
@@ -445,7 +535,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit monitoring manage
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-monitoring-platform">mirror-cli config edit monitoring platform</h6>
 <br>
@@ -454,7 +544,61 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit monitoring platform [platform]
-</code></pre>
+</pre>
+<br>
+<h5 id="mirror-cli-config-edit-replication">mirror-cli config edit replication</h5>
+<br>
+<p><strong>Configure replication settings</strong></p>
+<br>
+<p>Configure batch size, parallelism, compression, and topic discovery interval</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit replication
+</pre>
+<br>
+<h3 id="available-subcommands">Available Subcommands</h3>
+<br>
+<li><strong>batch-size</strong> - Set replication batch size (KB)</li>
+<li><strong>compression</strong> - Set compression algorithm</li>
+<li><strong>discovery-interval</strong> - Set topic discovery interval</li>
+<li><strong>parallelism</strong> - Set replication parallelism</li>
+<br>
+<h6 id="mirror-cli-config-edit-replication-batch-size">mirror-cli config edit replication batch-size</h6>
+<br>
+<p><strong>Set replication batch size (KB)</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit replication batch-size [size]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-replication-compression">mirror-cli config edit replication compression</h6>
+<br>
+<p><strong>Set compression algorithm</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit replication compression [type]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-replication-discovery-interval">mirror-cli config edit replication discovery-interval</h6>
+<br>
+<p><strong>Set topic discovery interval</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit replication discovery-interval [duration]
+</pre>
+<br>
+<h6 id="mirror-cli-config-edit-replication-parallelism">mirror-cli config edit replication parallelism</h6>
+<br>
+<p><strong>Set replication parallelism</strong></p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli config edit replication parallelism [count]
+</pre>
 <br>
 <h5 id="mirror-cli-config-edit-server">mirror-cli config edit server</h5>
 <br>
@@ -465,7 +609,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -483,7 +627,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server cors [origins]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-server-host">mirror-cli config edit server host</h6>
 <br>
@@ -492,7 +636,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server host [address]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-server-manage">mirror-cli config edit server manage</h6>
 <br>
@@ -503,7 +647,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server manage
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-server-mode">mirror-cli config edit server mode</h6>
 <br>
@@ -512,7 +656,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server mode [mode]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-server-port">mirror-cli config edit server port</h6>
 <br>
@@ -521,7 +665,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server port [port]
-</code></pre>
+</pre>
 <br>
 <h6 id="mirror-cli-config-edit-server-tls">mirror-cli config edit server tls</h6>
 <br>
@@ -530,7 +674,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config edit server tls [enabled]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-config-get">mirror-cli config get</h4>
 <br>
@@ -541,7 +685,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config get
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-config-save">mirror-cli config save</h4>
 <br>
@@ -552,7 +696,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config save [file]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-config-system">mirror-cli config system</h4>
 <br>
@@ -563,18 +707,18 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli config system
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-dashboard"><h3 id="mirror-cli-dashboard">mirror-cli dashboard</h3>
+<h3 id="mirror-cli-dashboard">mirror-cli dashboard</h3>
 <br>
 <p><strong>Show a live monitoring dashboard.</strong></p>
 <br>
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli dashboard
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-docs"><h3 id="mirror-cli-docs">mirror-cli docs</h3>
+<h3 id="mirror-cli-docs">mirror-cli docs</h3>
 <br>
 <p><strong>Generate CLI documentation</strong></p>
 <br>
@@ -583,7 +727,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli docs
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -598,14 +742,14 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli docs generate [flags]
-</code></pre>
+</pre>
 <br>
 <h3 id="options">Options</h3>
 <br>
 <pre><code>  -, --file string   Output file for documentation (default &#34;docs/cli-commands.md&#34;)
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-jobs"><h3 id="mirror-cli-jobs">mirror-cli jobs</h3>
+<h3 id="mirror-cli-jobs">mirror-cli jobs</h3>
 <br>
 <p><strong>Manage replication jobs</strong></p>
 <br>
@@ -614,13 +758,15 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
 <li><strong>add</strong> - Create a new replication job</li>
 <li><strong>analyze</strong> - Trigger historical AI analysis for a job</li>
 <li><strong>delete</strong> - Delete a replication job</li>
+<li><strong>force-restart</strong> - Forcefully restart a replication job</li>
+<li><strong>healthcheck</strong> - Perform health checks on clusters associated with a job</li>
 <li><strong>list</strong> - List all replication jobs</li>
 <li><strong>pause</strong> - Pause a replication job</li>
 <li><strong>restart</strong> - Restart a replication job</li>
@@ -637,7 +783,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs add
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-analyze">mirror-cli jobs analyze</h4>
 <br>
@@ -648,12 +794,12 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs analyze [job-id] [flags]
-</code></pre>
+</pre>
 <br>
 <h3 id="options">Options</h3>
 <br>
 <pre><code>  -, --period string   Analysis period (e.g., 7d, 30d) (default &#34;7d&#34;)
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-delete">mirror-cli jobs delete</h4>
 <br>
@@ -664,7 +810,29 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs delete [job-id]
-</code></pre>
+</pre>
+<br>
+<h4 id="mirror-cli-jobs-force-restart">mirror-cli jobs force-restart</h4>
+<br>
+<p><strong>Forcefully restart a replication job</strong></p>
+<br>
+<p>Forcefully restarts a job, performing pre-flight checks to ensure a clean start.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli jobs force-restart [job-id]
+</pre>
+<br>
+<h4 id="mirror-cli-jobs-healthcheck">mirror-cli jobs healthcheck</h4>
+<br>
+<p><strong>Perform health checks on clusters associated with a job</strong></p>
+<br>
+<p>Performs health checks on the source and target clusters for a specific job or all jobs.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli jobs healthcheck [job-id]
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-list">mirror-cli jobs list</h4>
 <br>
@@ -675,7 +843,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs list
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-pause">mirror-cli jobs pause</h4>
 <br>
@@ -686,7 +854,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs pause [job-id]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-restart">mirror-cli jobs restart</h4>
 <br>
@@ -697,7 +865,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs restart [job-id]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-start">mirror-cli jobs start</h4>
 <br>
@@ -708,7 +876,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs start [job-id]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-status">mirror-cli jobs status</h4>
 <br>
@@ -718,8 +886,35 @@
 <br>
 <h3 id="usage">Usage</h3>
 <br>
-<pre><code>mirror-cli jobs status [job-id]
-</code></pre>
+<pre><code>mirror-cli jobs status
+</pre>
+<br>
+<h3 id="available-subcommands">Available Subcommands</h3>
+<br>
+<li><strong>full</strong> - Show full mirror state for a job</li>
+<li><strong>metrics</strong> - Show detailed job status and metrics</li>
+<br>
+<h5 id="mirror-cli-jobs-status-full">mirror-cli jobs status full</h5>
+<br>
+<p><strong>Show full mirror state for a job</strong></p>
+<br>
+<p>Display the full mirror state for a replication job, including progress, gaps, and resume points.</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli jobs status full [job-id]
+</pre>
+<br>
+<h5 id="mirror-cli-jobs-status-metrics">mirror-cli jobs status metrics</h5>
+<br>
+<p><strong>Show detailed job status and metrics</strong></p>
+<br>
+<p>Display detailed status and performance metrics for a replication job</p>
+<br>
+<h3 id="usage">Usage</h3>
+<br>
+<pre><code>mirror-cli jobs status metrics [job-id]
+</pre>
 <br>
 <h4 id="mirror-cli-jobs-stop">mirror-cli jobs stop</h4>
 <br>
@@ -730,32 +925,32 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli jobs stop [job-id]
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-login"><h3 id="mirror-cli-login">mirror-cli login</h3>
+<h3 id="mirror-cli-login">mirror-cli login</h3>
 <br>
 <p><strong>Login to the kaf-mirror backend</strong></p>
 <br>
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli login [username] [flags]
-</code></pre>
+</pre>
 <br>
 <h3 id="options">Options</h3>
 <br>
 <pre><code>  -, --password string   User&#39;s password
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-logout"><h3 id="mirror-cli-logout">mirror-cli logout</h3>
+<h3 id="mirror-cli-logout">mirror-cli logout</h3>
 <br>
 <p><strong>Logout from the kaf-mirror backend.</strong></p>
 <br>
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli logout
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-tls"><h3 id="mirror-cli-tls">mirror-cli tls</h3>
+<h3 id="mirror-cli-tls">mirror-cli tls</h3>
 <br>
 <p><strong>Manage TLS certificates and secure communication</strong></p>
 <br>
@@ -764,7 +959,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli tls
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -782,7 +977,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli tls configure-client
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-tls-generate-certs">mirror-cli tls generate-certs</h4>
 <br>
@@ -793,7 +988,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli tls generate-certs
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-tls-import-cert">mirror-cli tls import-cert</h4>
 <br>
@@ -804,7 +999,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli tls import-cert
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-tls-verify">mirror-cli tls verify</h4>
 <br>
@@ -815,9 +1010,9 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli tls verify
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-users"><h3 id="mirror-cli-users">mirror-cli users</h3>
+<h3 id="mirror-cli-users">mirror-cli users</h3>
 <br>
 <p><strong>Manage users.</strong></p>
 <br>
@@ -826,7 +1021,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users
-</code></pre>
+</pre>
 <br>
 <h3 id="available-subcommands">Available Subcommands</h3>
 <br>
@@ -847,12 +1042,12 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users add [flags]
-</code></pre>
+</pre>
 <br>
 <h3 id="options">Options</h3>
 <br>
 <pre><code>  -, --password string   User&#39;s password
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-change-password">mirror-cli users change-password</h4>
 <br>
@@ -861,7 +1056,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users change-password
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-delete">mirror-cli users delete</h4>
 <br>
@@ -872,7 +1067,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users delete [username]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-list">mirror-cli users list</h4>
 <br>
@@ -883,7 +1078,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users list
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-reset-password">mirror-cli users reset-password</h4>
 <br>
@@ -894,7 +1089,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users reset-password [username]
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-reset-token">mirror-cli users reset-token</h4>
 <br>
@@ -905,7 +1100,7 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users reset-token
-</code></pre>
+</pre>
 <br>
 <h4 id="mirror-cli-users-set-role">mirror-cli users set-role</h4>
 <br>
@@ -916,28 +1111,24 @@
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli users set-role [username] [role]
-</code></pre>
+</pre>
 <br>
-</div><div class="command-card" id="mirror-cli-whoami"><h3 id="mirror-cli-whoami">mirror-cli whoami</h3>
+<h3 id="mirror-cli-whoami">mirror-cli whoami</h3>
 <br>
 <p><strong>Display the current user&#39;s information.</strong></p>
 <br>
 <h3 id="usage">Usage</h3>
 <br>
 <pre><code>mirror-cli whoami
-</code></pre>
+</pre>
 <br>
 <hr>
 <br>
-<p>*Auto generated by spf13/cobra on 16-Aug-2025*</p>
-</div>
+<p>*Auto generated by spf13/cobra on 19-Jan-2026*</p>
 
         </main>
     </div>
     <script>
-		// Populate navigation
-		document.getElementById('nav-list').innerHTML = '<li><a href="#mirror-cli" class="level-1">mirror-cli</a></li><li><a href="#mirror-cli-clusters" class="level-3">mirror-cli clusters</a></li><li><a href="#mirror-cli-clusters-add" class="level-4">mirror-cli clusters add</a></li><li><a href="#mirror-cli-clusters-list" class="level-4">mirror-cli clusters list</a></li><li><a href="#mirror-cli-clusters-purge" class="level-4">mirror-cli clusters purge</a></li><li><a href="#mirror-cli-clusters-remove" class="level-4">mirror-cli clusters remove</a></li><li><a href="#mirror-cli-clusters-restore" class="level-4">mirror-cli clusters restore</a></li><li><a href="#mirror-cli-config" class="level-3">mirror-cli config</a></li><li><a href="#mirror-cli-config-edit" class="level-4">mirror-cli config edit</a></li><li><a href="#mirror-cli-config-edit-ai" class="level-5">mirror-cli config edit ai</a></li><li><a href="#mirror-cli-config-edit-ai-features" class="level-6">mirror-cli config edit ai features</a></li><li><a href="#mirror-cli-config-edit-ai-manage" class="level-6">mirror-cli config edit ai manage</a></li><li><a href="#mirror-cli-config-edit-ai-model" class="level-6">mirror-cli config edit ai model</a></li><li><a href="#mirror-cli-config-edit-ai-provider" class="level-6">mirror-cli config edit ai provider</a></li><li><a href="#mirror-cli-config-edit-ai-test-and-enable" class="level-6">mirror-cli config edit ai test-and-enable</a></li><li><a href="#mirror-cli-config-edit-monitoring" class="level-5">mirror-cli config edit monitoring</a></li><li><a href="#mirror-cli-config-edit-monitoring-enabled" class="level-6">mirror-cli config edit monitoring enabled</a></li><li><a href="#mirror-cli-config-edit-monitoring-manage" class="level-6">mirror-cli config edit monitoring manage</a></li><li><a href="#mirror-cli-config-edit-monitoring-platform" class="level-6">mirror-cli config edit monitoring platform</a></li><li><a href="#mirror-cli-config-edit-server" class="level-5">mirror-cli config edit server</a></li><li><a href="#mirror-cli-config-edit-server-cors" class="level-6">mirror-cli config edit server cors</a></li><li><a href="#mirror-cli-config-edit-server-host" class="level-6">mirror-cli config edit server host</a></li><li><a href="#mirror-cli-config-edit-server-manage" class="level-6">mirror-cli config edit server manage</a></li><li><a href="#mirror-cli-config-edit-server-mode" class="level-6">mirror-cli config edit server mode</a></li><li><a href="#mirror-cli-config-edit-server-port" class="level-6">mirror-cli config edit server port</a></li><li><a href="#mirror-cli-config-edit-server-tls" class="level-6">mirror-cli config edit server tls</a></li><li><a href="#mirror-cli-config-get" class="level-4">mirror-cli config get</a></li><li><a href="#mirror-cli-config-save" class="level-4">mirror-cli config save</a></li><li><a href="#mirror-cli-config-system" class="level-4">mirror-cli config system</a></li><li><a href="#mirror-cli-dashboard" class="level-3">mirror-cli dashboard</a></li><li><a href="#mirror-cli-docs" class="level-3">mirror-cli docs</a></li><li><a href="#mirror-cli-docs-generate" class="level-4">mirror-cli docs generate</a></li><li><a href="#mirror-cli-jobs" class="level-3">mirror-cli jobs</a></li><li><a href="#mirror-cli-jobs-add" class="level-4">mirror-cli jobs add</a></li><li><a href="#mirror-cli-jobs-analyze" class="level-4">mirror-cli jobs analyze</a></li><li><a href="#mirror-cli-jobs-delete" class="level-4">mirror-cli jobs delete</a></li><li><a href="#mirror-cli-jobs-list" class="level-4">mirror-cli jobs list</a></li><li><a href="#mirror-cli-jobs-pause" class="level-4">mirror-cli jobs pause</a></li><li><a href="#mirror-cli-jobs-restart" class="level-4">mirror-cli jobs restart</a></li><li><a href="#mirror-cli-jobs-start" class="level-4">mirror-cli jobs start</a></li><li><a href="#mirror-cli-jobs-status" class="level-4">mirror-cli jobs status</a></li><li><a href="#mirror-cli-jobs-stop" class="level-4">mirror-cli jobs stop</a></li><li><a href="#mirror-cli-login" class="level-3">mirror-cli login</a></li><li><a href="#mirror-cli-logout" class="level-3">mirror-cli logout</a></li><li><a href="#mirror-cli-tls" class="level-3">mirror-cli tls</a></li><li><a href="#mirror-cli-tls-configure-client" class="level-4">mirror-cli tls configure-client</a></li><li><a href="#mirror-cli-tls-generate-certs" class="level-4">mirror-cli tls generate-certs</a></li><li><a href="#mirror-cli-tls-import-cert" class="level-4">mirror-cli tls import-cert</a></li><li><a href="#mirror-cli-tls-verify" class="level-4">mirror-cli tls verify</a></li><li><a href="#mirror-cli-users" class="level-3">mirror-cli users</a></li><li><a href="#mirror-cli-users-add" class="level-4">mirror-cli users add</a></li><li><a href="#mirror-cli-users-change-password" class="level-4">mirror-cli users change-password</a></li><li><a href="#mirror-cli-users-delete" class="level-4">mirror-cli users delete</a></li><li><a href="#mirror-cli-users-list" class="level-4">mirror-cli users list</a></li><li><a href="#mirror-cli-users-reset-password" class="level-4">mirror-cli users reset-password</a></li><li><a href="#mirror-cli-users-reset-token" class="level-4">mirror-cli users reset-token</a></li><li><a href="#mirror-cli-users-set-role" class="level-4">mirror-cli users set-role</a></li><li><a href="#mirror-cli-whoami" class="level-3">mirror-cli whoami</a></li>';
-
         // Smooth scrolling for anchor links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
@@ -955,16 +1146,22 @@
         // Highlight current section in navigation
         const observer = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-                const id = entry.target.getAttribute('id');
-                const navLink = document.querySelector('.sidebar a[href="#' + id + '"]');
                 if (entry.isIntersecting) {
-                    document.querySelectorAll('.sidebar a').forEach(link => link.classList.remove('active'));
-                    if (navLink) {
-                        navLink.classList.add('active');
+                    const id = entry.target.getAttribute('id');
+                    if (id) {
+                        document.querySelectorAll('.sidebar a').forEach(link => {
+                            link.style.backgroundColor = '';
+                            link.style.color = '#4a5568';
+                        });
+                        const activeLink = document.querySelector('.sidebar a[href="#' + id + '"]');
+                        if (activeLink) {
+                            activeLink.style.backgroundColor = '#bee3f8';
+                            activeLink.style.color = '#2b6cb0';
+                        }
                     }
                 }
             });
-        }, { rootMargin: '-30% 0px -70% 0px' });
+        }, { rootMargin: '-20% 0px -80% 0px' });
         
         document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(header => {
             observer.observe(header);

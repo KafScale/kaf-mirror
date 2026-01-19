@@ -37,14 +37,20 @@ type KafMirror interface {
 
 // KafMirrorImpl orchestrates the replication from a source to a target Kafka cluster.
 type KafMirrorImpl struct {
-	Consumer         *Consumer
-	Producer         *Producer
-	mappings         []config.TopicMapping
-	topicMap         map[string]string
-	regexMaps        []regexMapping
-	targetPartitions map[string]int32
-	wg               sync.WaitGroup
-	cancelFunc       context.CancelFunc
+	Consumer          *Consumer
+	Producer          *Producer
+	sourceCfg         config.ClusterConfig
+	targetCfg         config.ClusterConfig
+	mappings          []config.TopicMapping
+	topicMap          map[string]string
+	regexMaps         []regexMapping
+	targetPartitions  map[string]int32
+	mapMu             sync.RWMutex
+	wg                sync.WaitGroup
+	cancelFunc        context.CancelFunc
+	jobID             string
+	onPanic           func(jobID string, reason string)
+	discoveryInterval time.Duration
 
 	// Incident tracking to prevent spam logging
 	incidentStates map[string]bool
@@ -83,13 +89,16 @@ func NewKafMirror(cfg *config.Config) (KafMirror, error) {
 	}
 
 	return &KafMirrorImpl{
-		Consumer:         consumer,
-		Producer:         producer,
-		mappings:         cfg.Topics,
-		topicMap:         topicMap,
-		regexMaps:        regexMaps,
-		targetPartitions: targetPartitions,
-		incidentStates:   make(map[string]bool),
+		Consumer:          consumer,
+		Producer:          producer,
+		sourceCfg:         cfg.Clusters["source"],
+		targetCfg:         cfg.Clusters["target"],
+		mappings:          cfg.Topics,
+		topicMap:          topicMap,
+		regexMaps:         regexMaps,
+		targetPartitions:  targetPartitions,
+		discoveryInterval: discoveryInterval(cfg),
+		incidentStates:    make(map[string]bool),
 	}, nil
 }
 
@@ -100,6 +109,8 @@ func (r *KafMirrorImpl) Start(jobID string, metricsCallback func(database.Replic
 
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancelFunc = cancel
+	r.jobID = jobID
+	r.onPanic = onPanic
 	r.wg.Add(2)
 
 	go func() {
@@ -133,6 +144,14 @@ func (r *KafMirrorImpl) Start(jobID string, metricsCallback func(database.Replic
 		logger.Info("[Job %s] Metrics collection goroutine ended", jobID)
 	}()
 
+	if len(r.regexMaps) > 0 && r.discoveryInterval > 0 {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.discoverTopicsLoop(ctx)
+		}()
+	}
+
 	logger.Info("[Job %s] Both goroutines started successfully", jobID)
 }
 
@@ -162,7 +181,9 @@ func (r *KafMirrorImpl) HandleRecordForTest(record *kgo.Record) {
 }
 
 func (r *KafMirrorImpl) handleRecord(record *kgo.Record) {
+	r.mapMu.RLock()
 	targetTopic, ok := r.topicMap[string(record.Topic)]
+	r.mapMu.RUnlock()
 	if !ok {
 		// Check regex mappings
 		for _, rm := range r.regexMaps {
@@ -213,7 +234,10 @@ func (r *KafMirrorImpl) handleRecord(record *kgo.Record) {
 		Key:     record.Key,
 		Headers: record.Headers,
 	}
-	if partitionCount, ok := r.targetPartitions[targetTopic]; ok && partitionCount > 0 {
+	r.mapMu.RLock()
+	partitionCount, hasPartitions := r.targetPartitions[targetTopic]
+	r.mapMu.RUnlock()
+	if hasPartitions && partitionCount > 0 {
 		if record.Partition < partitionCount {
 			outRecord.Partition = record.Partition
 		} else {
@@ -471,7 +495,8 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 		}
 
 		// Ensure target topic exists with correct partitions
-		err = targetAdmin.EnsureTopicExists(ctx, targetTopic, sourceTopicInfo.Partitions, sourceTopicInfo.ReplicationFactor)
+		replicationFactor := clampReplicationFactor(sourceTopicInfo.ReplicationFactor, targetInfo.BrokerCount, sourceTopic)
+		err = ensureTopicWithRetry(ctx, targetAdmin, targetTopic, sourceTopicInfo.Partitions, replicationFactor)
 		if err != nil {
 			return nil, fmt.Errorf("failed to ensure target topic %s exists: %w", targetTopic, err)
 		}
@@ -585,6 +610,133 @@ func validateAndSyncClusters(cfg *config.Config, topics []string, topicMap map[s
 
 	logger.Info("Cluster validation and state synchronization completed successfully")
 	return targetPartitions, nil
+}
+
+func (r *KafMirrorImpl) discoverTopicsLoop(ctx context.Context) {
+	ticker := time.NewTicker(r.discoveryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := r.discoverAndSyncTopics(ctx); err != nil {
+				logger.Error("[Job %s] Topic discovery failed: %v", r.jobID, err)
+				if r.onPanic != nil {
+					r.onPanic(r.jobID, err.Error())
+				}
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (r *KafMirrorImpl) discoverAndSyncTopics(ctx context.Context) error {
+	sourceAdmin, err := adminClientFactory(r.sourceCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create source admin client: %w", err)
+	}
+	defer sourceAdmin.Close()
+
+	targetAdmin, err := adminClientFactory(r.targetCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create target admin client: %w", err)
+	}
+	defer targetAdmin.Close()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sourceInfo, err := sourceAdmin.GetClusterInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get source cluster info: %w", err)
+	}
+	targetInfo, err := targetAdmin.GetClusterInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get target cluster info: %w", err)
+	}
+
+	for _, rm := range r.regexMaps {
+		for sourceTopic, sourceTopicInfo := range sourceInfo.Topics {
+			if !rm.regex.MatchString(sourceTopic) {
+				continue
+			}
+			r.mapMu.RLock()
+			_, exists := r.topicMap[sourceTopic]
+			r.mapMu.RUnlock()
+			if exists {
+				continue
+			}
+
+			targetTopic := rm.target
+			r.mapMu.RLock()
+			for existingSource, existingTarget := range r.topicMap {
+				if existingTarget == targetTopic && existingSource != sourceTopic {
+					r.mapMu.RUnlock()
+					return fmt.Errorf("target topic %s is mapped from multiple sources: %s and %s", targetTopic, existingSource, sourceTopic)
+				}
+			}
+			r.mapMu.RUnlock()
+
+			replicationFactor := clampReplicationFactor(sourceTopicInfo.ReplicationFactor, targetInfo.BrokerCount, sourceTopic)
+			if err := ensureTopicWithRetry(ctx, targetAdmin, targetTopic, sourceTopicInfo.Partitions, replicationFactor); err != nil {
+				return fmt.Errorf("failed to ensure target topic %s exists after retries: %w", targetTopic, err)
+			}
+
+			r.mapMu.Lock()
+			r.topicMap[sourceTopic] = targetTopic
+			if r.targetPartitions == nil {
+				r.targetPartitions = make(map[string]int32)
+			}
+			r.targetPartitions[targetTopic] = sourceTopicInfo.Partitions
+			r.mapMu.Unlock()
+
+			r.Consumer.AddTopics(sourceTopic)
+			logger.Info("[Job %s] Discovered new topic mapping %s -> %s", r.jobID, sourceTopic, targetTopic)
+		}
+	}
+
+	return nil
+}
+
+func ensureTopicWithRetry(ctx context.Context, admin AdminClientAPI, topicName string, partitions int32, replicationFactor int16) error {
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := admin.EnsureTopicExists(ctx, topicName, partitions, replicationFactor); err != nil {
+			lastErr = err
+			logger.Warn("Failed to create target topic %s (attempt %d/5): %v", topicName, attempt, err)
+			time.Sleep(time.Duration(attempt) * time.Second)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("topic %s creation failed after 5 attempts: %w", topicName, lastErr)
+}
+
+func clampReplicationFactor(sourceRF int16, targetBrokerCount int, sourceTopic string) int16 {
+	if sourceRF <= 0 {
+		sourceRF = 1
+	}
+	if targetBrokerCount <= 0 {
+		return sourceRF
+	}
+	if int(sourceRF) > targetBrokerCount {
+		logger.Warn("Source topic %s replication factor %d exceeds target broker count %d; using %d", sourceTopic, sourceRF, targetBrokerCount, targetBrokerCount)
+		return int16(targetBrokerCount)
+	}
+	return sourceRF
+}
+
+func discoveryInterval(cfg *config.Config) time.Duration {
+	interval, err := time.ParseDuration(cfg.Replication.TopicDiscoveryInterval)
+	if err != nil {
+		return 5 * time.Minute
+	}
+	return interval
 }
 
 // CaptureJobInventory captures comprehensive inventory data when a job starts
