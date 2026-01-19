@@ -132,6 +132,24 @@
 </tbody>
 </table>
 
+<h2 id="auth">Auth</h2>
+
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Role</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>GET /auth/me</code></td>
+<td><code>any</code></td>
+</tr>
+</tbody>
+</table>
+
 <h2 id="configuration">Configuration</h2>
 
 <table>
@@ -367,12 +385,12 @@
 <tbody>
 <tr>
 <td><code>GET /api/v1/topics/source</code></td>
-<td><code>any</code></td>
+<td><code>admin</code>, <code>operator</code>, <code>monitoring</code>, <code>compliance</code></td>
 </tr>
 
 <tr>
 <td><code>GET /api/v1/topics/target</code></td>
-<td><code>any</code></td>
+<td><code>admin</code>, <code>operator</code>, <code>monitoring</code>, <code>compliance</code></td>
 </tr>
 </tbody>
 </table>
@@ -390,6 +408,11 @@
 <tbody>
 <tr>
 <td><code>GET /api/v1/ai/insights</code></td>
+<td><code>admin</code>, <code>operator</code>, <code>monitoring</code></td>
+</tr>
+
+<tr>
+<td><code>GET /api/v1/ai/metrics</code></td>
 <td><code>admin</code>, <code>operator</code>, <code>monitoring</code></td>
 </tr>
 
@@ -598,6 +621,24 @@
 <tr>
 <td><code>GET /api/v1/compliance/report/:id</code></td>
 <td><code>admin</code>, <code>compliance</code></td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="events">Events</h2>
+
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Role</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>GET /api/v1/events</code></td>
+<td><code>admin</code>, <code>operator</code>, <code>monitoring</code>, <code>compliance</code></td>
 </tr>
 </tbody>
 </table>

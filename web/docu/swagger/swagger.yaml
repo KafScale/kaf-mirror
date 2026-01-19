@@ -2,6 +2,8 @@ basePath: /api/v1
 definitions:
   config.AIConfig:
     properties:
+      apisecret:
+        type: string
       endpoint:
         type: string
       features:
@@ -35,6 +37,25 @@ definitions:
       security:
         $ref: '#/definitions/config.SecurityConfig'
     type: object
+  config.ComplianceConfig:
+    properties:
+      schedule:
+        $ref: '#/definitions/config.ComplianceSchedule'
+    type: object
+  config.ComplianceSchedule:
+    properties:
+      daily:
+        type: boolean
+      enabled:
+        type: boolean
+      monthly:
+        type: boolean
+      runHour:
+        description: 0-23 local time
+        type: integer
+      weekly:
+        type: boolean
+    type: object
   config.Config:
     properties:
       ai:
@@ -43,6 +64,8 @@ definitions:
         additionalProperties:
           $ref: '#/definitions/config.ClusterConfig'
         type: object
+      compliance:
+        $ref: '#/definitions/config.ComplianceConfig'
       database:
         $ref: '#/definitions/config.DatabaseConfig'
       logging:
@@ -62,6 +85,8 @@ definitions:
     properties:
       path:
         type: string
+      retentionDays:
+        type: integer
     type: object
   config.LoggingConfig:
     properties:
@@ -112,6 +137,8 @@ definitions:
         type: string
       parallelism:
         type: integer
+      topicDiscoveryInterval:
+        type: string
     type: object
   config.SecurityConfig:
     properties:
@@ -404,27 +431,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  database.MigrationCheckpoint:
-    properties:
-      checkpoint_type:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: string
-      id:
-        type: integer
-      job_id:
-        type: string
-      migration_reason:
-        type: string
-      source_consumer_group_offsets:
-        type: string
-      target_high_water_marks:
-        type: string
-      validation_results:
-        type: string
-    type: object
   database.MirrorGap:
     properties:
       detected_at:
@@ -482,54 +488,6 @@ definitions:
         type: integer
       target_topic:
         type: string
-    type: object
-  database.MirrorStateAnalysis:
-    properties:
-      analysis_results:
-        type: string
-      analysis_type:
-        type: string
-      analyzed_at:
-        type: string
-      analyzer_version:
-        type: string
-      critical_issues_count:
-        type: integer
-      id:
-        type: integer
-      job_id:
-        type: string
-      recommendations:
-        type: string
-      source_cluster_state:
-        type: string
-      target_cluster_state:
-        type: string
-      warning_issues_count:
-        type: integer
-    type: object
-  database.MirrorStateData:
-    properties:
-      job_id:
-        type: string
-      last_checkpoint:
-        $ref: '#/definitions/database.MigrationCheckpoint'
-      mirror_gaps:
-        items:
-          $ref: '#/definitions/database.MirrorGap'
-        type: array
-      mirror_progress:
-        items:
-          $ref: '#/definitions/database.MirrorProgress'
-        type: array
-      resume_points:
-        items:
-          $ref: '#/definitions/database.ResumePoint'
-        type: array
-      state_analysis:
-        items:
-          $ref: '#/definitions/database.MirrorStateAnalysis'
-        type: array
     type: object
   database.OperationalEvent:
     properties:
@@ -590,18 +548,32 @@ definitions:
     type: object
   database.ReplicationMetric:
     properties:
+      bytes_consumed:
+        type: integer
       bytes_transferred:
         type: integer
+      critical_lag:
+        type: boolean
       current_lag:
         type: integer
       error_count:
         type: integer
+      error_spike:
+        type: boolean
+      high_error_rate:
+        type: boolean
       id:
         type: integer
       job_id:
         type: string
+      messages_consumed:
+        type: integer
       messages_replicated:
         type: integer
+      source_stalled:
+        type: boolean
+      target_stalled:
+        type: boolean
       timestamp:
         type: string
     type: object
@@ -1980,10 +1952,12 @@ paths:
     get:
       consumes:
       - application/json
-      description: 'Retrieve mirror state data. Without period parameter: returns
-        only the latest state. With period parameter: returns historical data for
-        the specified time range. Data is automatically purged after 7 days. For real-time
-        analysis, use the validate-mirror endpoint instead.'
+      description: 'Retrieve mirror state data with dual behavior: WITHOUT period
+        parameter returns the latest state as single objects or null (e.g., {"mirror_progress":
+        {...}, "resume_points": null}). WITH period parameter returns historical data
+        as arrays (e.g., {"mirror_progress": [...], "resume_points": []}). Supported
+        periods: today, yesterday, this-week, last-week. Data is automatically purged
+        after 7 days. For real-time analysis, use the validate-mirror endpoint instead.'
       parameters:
       - description: Job ID
         in: path
@@ -2003,9 +1977,11 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Latest state (single objects/null) or historical data (arrays)
+            based on period parameter
           schema:
-            $ref: '#/definitions/database.MirrorStateData'
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:

@@ -2034,7 +2034,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Retrieve mirror state data. Without period parameter: returns only the latest state. With period parameter: returns historical data for the specified time range. Data is automatically purged after 7 days. For real-time analysis, use the validate-mirror endpoint instead.",
+                "description": "Retrieve mirror state data with dual behavior: WITHOUT period parameter returns the latest state as single objects or null (e.g., {\"mirror_progress\": {...}, \"resume_points\": null}). WITH period parameter returns historical data as arrays (e.g., {\"mirror_progress\": [...], \"resume_points\": []}). Supported periods: today, yesterday, this-week, last-week. Data is automatically purged after 7 days. For real-time analysis, use the validate-mirror endpoint instead.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2068,9 +2068,10 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Latest state (single objects/null) or historical data (arrays) based on period parameter",
                         "schema": {
-                            "$ref": "#/definitions/database.MirrorStateData"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -2608,6 +2609,9 @@ const docTemplate = `{
         "config.AIConfig": {
             "type": "object",
             "properties": {
+                "apisecret": {
+                    "type": "string"
+                },
                 "endpoint": {
                     "type": "string"
                 },
@@ -2659,6 +2663,35 @@ const docTemplate = `{
                 }
             }
         },
+        "config.ComplianceConfig": {
+            "type": "object",
+            "properties": {
+                "schedule": {
+                    "$ref": "#/definitions/config.ComplianceSchedule"
+                }
+            }
+        },
+        "config.ComplianceSchedule": {
+            "type": "object",
+            "properties": {
+                "daily": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "monthly": {
+                    "type": "boolean"
+                },
+                "runHour": {
+                    "description": "0-23 local time",
+                    "type": "integer"
+                },
+                "weekly": {
+                    "type": "boolean"
+                }
+            }
+        },
         "config.Config": {
             "type": "object",
             "properties": {
@@ -2670,6 +2703,9 @@ const docTemplate = `{
                     "additionalProperties": {
                         "$ref": "#/definitions/config.ClusterConfig"
                     }
+                },
+                "compliance": {
+                    "$ref": "#/definitions/config.ComplianceConfig"
                 },
                 "database": {
                     "$ref": "#/definitions/config.DatabaseConfig"
@@ -2699,6 +2735,9 @@ const docTemplate = `{
             "properties": {
                 "path": {
                     "type": "string"
+                },
+                "retentionDays": {
+                    "type": "integer"
                 }
             }
         },
@@ -2776,6 +2815,9 @@ const docTemplate = `{
                 },
                 "parallelism": {
                     "type": "integer"
+                },
+                "topicDiscoveryInterval": {
+                    "type": "string"
                 }
             }
         },
@@ -3224,38 +3266,6 @@ const docTemplate = `{
                 }
             }
         },
-        "database.MigrationCheckpoint": {
-            "type": "object",
-            "properties": {
-                "checkpoint_type": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "migration_reason": {
-                    "type": "string"
-                },
-                "source_consumer_group_offsets": {
-                    "type": "string"
-                },
-                "target_high_water_marks": {
-                    "type": "string"
-                },
-                "validation_results": {
-                    "type": "string"
-                }
-            }
-        },
         "database.MirrorGap": {
             "type": "object",
             "properties": {
@@ -3341,79 +3351,6 @@ const docTemplate = `{
                 },
                 "target_topic": {
                     "type": "string"
-                }
-            }
-        },
-        "database.MirrorStateAnalysis": {
-            "type": "object",
-            "properties": {
-                "analysis_results": {
-                    "type": "string"
-                },
-                "analysis_type": {
-                    "type": "string"
-                },
-                "analyzed_at": {
-                    "type": "string"
-                },
-                "analyzer_version": {
-                    "type": "string"
-                },
-                "critical_issues_count": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "recommendations": {
-                    "type": "string"
-                },
-                "source_cluster_state": {
-                    "type": "string"
-                },
-                "target_cluster_state": {
-                    "type": "string"
-                },
-                "warning_issues_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "database.MirrorStateData": {
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string"
-                },
-                "last_checkpoint": {
-                    "$ref": "#/definitions/database.MigrationCheckpoint"
-                },
-                "mirror_gaps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/database.MirrorGap"
-                    }
-                },
-                "mirror_progress": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/database.MirrorProgress"
-                    }
-                },
-                "resume_points": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/database.ResumePoint"
-                    }
-                },
-                "state_analysis": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/database.MirrorStateAnalysis"
-                    }
                 }
             }
         },
@@ -3507,8 +3444,14 @@ const docTemplate = `{
         "database.ReplicationMetric": {
             "type": "object",
             "properties": {
+                "bytes_consumed": {
+                    "type": "integer"
+                },
                 "bytes_transferred": {
                     "type": "integer"
+                },
+                "critical_lag": {
+                    "type": "boolean"
                 },
                 "current_lag": {
                     "type": "integer"
@@ -3516,14 +3459,29 @@ const docTemplate = `{
                 "error_count": {
                     "type": "integer"
                 },
+                "error_spike": {
+                    "type": "boolean"
+                },
+                "high_error_rate": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
                 "job_id": {
                     "type": "string"
                 },
+                "messages_consumed": {
+                    "type": "integer"
+                },
                 "messages_replicated": {
                     "type": "integer"
+                },
+                "source_stalled": {
+                    "type": "boolean"
+                },
+                "target_stalled": {
+                    "type": "boolean"
                 },
                 "timestamp": {
                     "type": "string"
