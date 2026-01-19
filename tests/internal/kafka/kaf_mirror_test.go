@@ -94,6 +94,60 @@ func TestResolveTopicMappings_RegexExpands(t *testing.T) {
 	assert.NotContains(t, topics, "events-2")
 }
 
+func TestResolveTopicMappings_DefaultTarget(t *testing.T) {
+	restore := kafka.SetAdminClientFactoryForTest(func(cfg config.ClusterConfig) (kafka.AdminClientAPI, error) {
+		return &fakeAdmin{
+			info: &kafka.ClusterInfo{
+				Topics: map[string]kafka.TopicInfo{
+					"orders": {Name: "orders"},
+				},
+			},
+		}, nil
+	})
+	t.Cleanup(restore)
+
+	cfg := &config.Config{
+		Clusters: map[string]config.ClusterConfig{
+			"source": {Brokers: "localhost:9092"},
+		},
+		Topics: []config.TopicMapping{
+			{Source: "orders", Target: "", Enabled: true},
+		},
+	}
+
+	_, topicMap, err := kafka.ResolveTopicMappingsForTest(cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, "orders", topicMap["orders"])
+}
+
+func TestResolveTopicMappings_RegexSubstitution(t *testing.T) {
+	restore := kafka.SetAdminClientFactoryForTest(func(cfg config.ClusterConfig) (kafka.AdminClientAPI, error) {
+		return &fakeAdmin{
+			info: &kafka.ClusterInfo{
+				Topics: map[string]kafka.TopicInfo{
+					"orders-1": {Name: "orders-1"},
+					"orders-2": {Name: "orders-2"},
+				},
+			},
+		}, nil
+	})
+	t.Cleanup(restore)
+
+	cfg := &config.Config{
+		Clusters: map[string]config.ClusterConfig{
+			"source": {Brokers: "localhost:9092"},
+		},
+		Topics: []config.TopicMapping{
+			{Source: `orders-(.*)`, Target: `backup-$1`, Enabled: true},
+		},
+	}
+
+	_, topicMap, err := kafka.ResolveTopicMappingsForTest(cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, "backup-1", topicMap["orders-1"])
+	assert.Equal(t, "backup-2", topicMap["orders-2"])
+}
+
 func TestResolveTopicMappings_RejectsTargetCollisions(t *testing.T) {
 	restore := kafka.SetAdminClientFactoryForTest(func(cfg config.ClusterConfig) (kafka.AdminClientAPI, error) {
 		return &fakeAdmin{

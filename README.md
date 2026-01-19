@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Core Replication Engine:** Built with `franz-go`, it handles consuming from a source Kafka cluster and producing to a target cluster based on defined topic mappings (exact and regex).
+- **Core Replication Engine:** Built with `franz-go`, it handles consuming from a source Kafka cluster and producing to a target cluster with same-name mirroring by default, plus optional exact/regex mappings.
 - **Enterprise Web Dashboard:** Professional tab-based interface with Operations, Health, Executive, and Compliance sections.
 - **Hybrid Configuration:** The application loads its base configuration from a `default.yml` file and stores runtime changes (like replication jobs) in a SQLite database.
 - **Comprehensive REST API:** A full-featured API built with Fiber provides endpoints for managing the application.
@@ -124,7 +124,7 @@ This will authenticate with the API and store a session token securely on your l
   - Topic pattern support with wildcards (`user.*`, `events-*`)
   - Interactive topic selection or manual input
   - Comprehensive replication settings (batch size, parallelism, compression)
-  - Custom target topic name mapping
+  - Optional custom target topic mapping (exact or regex with capture substitution)
 - `./mirror-cli jobs start [job-id]`: Start paused or stopped replication jobs with interactive selection.
 - `./mirror-cli jobs stop [job-id]`: Stop running replication jobs with interactive selection.
 - `./mirror-cli jobs pause [job-id]`: Pause running replication jobs (resumable) with interactive selection.
@@ -403,7 +403,7 @@ Source Cluster                       Target Cluster
 ┌──────────────────────────────────────────┴───────┐
 │                    kaf-mirror                    │
 ├──────────────────────────────────────────────────┤
-│  Topic mapping (exact + regex patterns)          │
+│  Topic mapping (default mirror + regex patterns) │
 │  Job lifecycle (start / stop / pause)            │
 │  Consumer lag as architectural signal            │
 │  AI anomaly detection + tuning recommendations   │

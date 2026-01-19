@@ -385,16 +385,23 @@ func resolveTopicMappings(cfg *config.Config) ([]string, map[string]string, []re
 		if !m.Enabled {
 			continue
 		}
+		targetPattern := m.Target
+		if targetPattern == "" {
+			targetPattern = m.Source
+		}
 		if isRegex(m.Source) {
 			re, err := regexp.Compile(m.Source)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("invalid regex pattern %q: %w", m.Source, err)
 			}
-			regexMaps = append(regexMaps, regexMapping{regex: re, target: m.Target})
+			if targetPattern == "" {
+				targetPattern = "$0"
+			}
+			regexMaps = append(regexMaps, regexMapping{regex: re, target: targetPattern})
 			continue
 		}
 		topics = append(topics, m.Source)
-		topicMap[m.Source] = m.Target
+		topicMap[m.Source] = targetPattern
 	}
 
 	if len(regexMaps) == 0 {
@@ -432,14 +439,18 @@ func resolveTopicMappings(cfg *config.Config) ([]string, map[string]string, []re
 				continue
 			}
 			matched = true
-			if existingTarget, ok := topicMap[topicName]; ok && existingTarget != rm.target {
-				return nil, nil, nil, fmt.Errorf("topic %s matches multiple targets: %s and %s", topicName, existingTarget, rm.target)
+			targetTopic := rm.regex.ReplaceAllString(topicName, rm.target)
+			if targetTopic == "" {
+				return nil, nil, nil, fmt.Errorf("regex mapping for %s produced empty target topic", topicName)
 			}
-			if existingSource, ok := targetToSource[rm.target]; ok && existingSource != topicName {
-				return nil, nil, nil, fmt.Errorf("target topic %s is mapped from multiple sources: %s and %s", rm.target, existingSource, topicName)
+			if existingTarget, ok := topicMap[topicName]; ok && existingTarget != targetTopic {
+				return nil, nil, nil, fmt.Errorf("topic %s matches multiple targets: %s and %s", topicName, existingTarget, targetTopic)
 			}
-			topicMap[topicName] = rm.target
-			targetToSource[rm.target] = topicName
+			if existingSource, ok := targetToSource[targetTopic]; ok && existingSource != topicName {
+				return nil, nil, nil, fmt.Errorf("target topic %s is mapped from multiple sources: %s and %s", targetTopic, existingSource, topicName)
+			}
+			topicMap[topicName] = targetTopic
+			targetToSource[targetTopic] = topicName
 			if !topicsSeen[topicName] {
 				topics = append(topics, topicName)
 				topicsSeen[topicName] = true
@@ -673,7 +684,10 @@ func (r *KafMirrorImpl) discoverAndSyncTopics(ctx context.Context) error {
 				continue
 			}
 
-			targetTopic := rm.target
+			targetTopic := rm.regex.ReplaceAllString(sourceTopic, rm.target)
+			if targetTopic == "" {
+				return fmt.Errorf("regex mapping for %s produced empty target topic", sourceTopic)
+			}
 			r.mapMu.RLock()
 			for existingSource, existingTarget := range r.topicMap {
 				if existingTarget == targetTopic && existingSource != sourceTopic {
