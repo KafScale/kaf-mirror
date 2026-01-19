@@ -29,6 +29,11 @@ type PrometheusSink struct {
 	bytesConsumed      prometheus.Gauge
 	currentLag         prometheus.Gauge
 	errorCount         prometheus.Gauge
+	sourceStalled      prometheus.Gauge
+	targetStalled      prometheus.Gauge
+	criticalLag        prometheus.Gauge
+	highErrorRate      prometheus.Gauge
+	errorSpike         prometheus.Gauge
 }
 
 // NewPrometheusSink creates a new Prometheus sink.
@@ -57,9 +62,41 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 		Name: "kaf_mirror_error_count",
 		Help: "Number of errors.",
 	})
+	sourceStalled := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_incident_source_stalled",
+		Help: "Source consumption stalled (1=true).",
+	})
+	targetStalled := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_incident_target_stalled",
+		Help: "Target production stalled (1=true).",
+	})
+	criticalLag := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_incident_critical_lag",
+		Help: "Critical lag detected (1=true).",
+	})
+	highErrorRate := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_incident_high_error_rate",
+		Help: "High error rate detected (1=true).",
+	})
+	errorSpike := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "kaf_mirror_incident_error_spike",
+		Help: "Error spike detected (1=true).",
+	})
 
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(messagesReplicated, bytesTransferred, messagesConsumed, bytesConsumed, currentLag, errorCount)
+	registry.MustRegister(
+		messagesReplicated,
+		bytesTransferred,
+		messagesConsumed,
+		bytesConsumed,
+		currentLag,
+		errorCount,
+		sourceStalled,
+		targetStalled,
+		criticalLag,
+		highErrorRate,
+		errorSpike,
+	)
 
 	pusher := push.New(cfg.PushGateway, "kaf-mirror").Gatherer(registry)
 
@@ -71,6 +108,11 @@ func NewPrometheusSink(cfg config.PrometheusConfig) (*PrometheusSink, error) {
 		bytesConsumed:      bytesConsumed,
 		currentLag:         currentLag,
 		errorCount:         errorCount,
+		sourceStalled:      sourceStalled,
+		targetStalled:      targetStalled,
+		criticalLag:        criticalLag,
+		highErrorRate:      highErrorRate,
+		errorSpike:         errorSpike,
 	}, nil
 }
 
@@ -82,6 +124,18 @@ func (s *PrometheusSink) Send(metric database.ReplicationMetric) error {
 	s.bytesConsumed.Set(float64(metric.BytesConsumed))
 	s.currentLag.Set(float64(metric.CurrentLag))
 	s.errorCount.Set(float64(metric.ErrorCount))
+	s.sourceStalled.Set(boolToFloat(metric.SourceStalled))
+	s.targetStalled.Set(boolToFloat(metric.TargetStalled))
+	s.criticalLag.Set(boolToFloat(metric.CriticalLag))
+	s.highErrorRate.Set(boolToFloat(metric.HighErrorRate))
+	s.errorSpike.Set(boolToFloat(metric.ErrorSpike))
 
 	return s.pusher.Push()
+}
+
+func boolToFloat(val bool) float64 {
+	if val {
+		return 1
+	}
+	return 0
 }

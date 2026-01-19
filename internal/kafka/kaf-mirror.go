@@ -385,6 +385,11 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 				BytesConsumed:      int(totalConsumedBytes), // Total bytes consumed
 				CurrentLag:         int(currentLag),         // Current consumer lag
 				ErrorCount:         int(totalErrors),        // Total errors
+				SourceStalled:      sourceStalled,
+				TargetStalled:      targetStalled,
+				CriticalLag:        criticalLag,
+				HighErrorRate:      highErrorRate,
+				ErrorSpike:         errorSpike,
 				Timestamp:          time.Now(),
 			}
 
