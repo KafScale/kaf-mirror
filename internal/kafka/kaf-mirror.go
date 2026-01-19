@@ -284,12 +284,15 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 			// Disaster detection thresholds
 			criticalLag := currentLag > 200
 			highErrorRate := totalErrors > 0 && totalMessages > 0 && (float64(totalErrors)/float64(totalMessages)) > 0.1
-			zeroThroughput := logCounter > 6 && totalMessages == 0 // No messages for 60+ seconds
+			sourceStalled := logCounter > 6 && totalConsumed == 0
+			targetStalled := logCounter > 6 && totalConsumed > 0 && totalMessages == 0
 			errorSpike := totalErrors > 0
 
 			// Performance milestones (positive events)
-			isFirstMessage := totalMessages == 1 && logCounter <= 2
-			isSignificantMilestone := totalMessages > 0 && totalMessages%100 == 0
+			isFirstProduced := totalMessages == 1 && logCounter <= 2
+			isSignificantProduced := totalMessages > 0 && totalMessages%100 == 0
+			isFirstConsumed := totalConsumed == 1 && logCounter <= 2
+			isSignificantConsumed := totalConsumed > 0 && totalConsumed%100 == 0
 
 			// Check for producer failure threshold
 			if producerMetrics.ConsecutiveErrors > 100 {
@@ -322,18 +325,27 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 				r.incidentStates["high_error_rate"] = false
 			}
 
-			if zeroThroughput {
-				if !r.incidentStates["zero_throughput"] {
-					logger.WarnAI("incident", "start", jobID, "Zero throughput detected: No messages processed in 60+ seconds")
-					r.incidentStates["zero_throughput"] = true
+			if sourceStalled {
+				if !r.incidentStates["source_stalled"] {
+					logger.WarnAI("incident", "start", jobID, "Source stalled: No messages consumed in 60+ seconds")
+					r.incidentStates["source_stalled"] = true
 				}
-			} else {
-				// Reset incident state when throughput resumes
-				if r.incidentStates["zero_throughput"] {
-					logger.InfoAI("incident", "resolved", jobID, "Throughput resumed: Messages=%d, Bytes=%d",
-						totalMessages, totalBytes)
+			} else if r.incidentStates["source_stalled"] {
+				logger.InfoAI("incident", "resolved", jobID, "Source throughput resumed: Consumed=%d, Bytes=%d",
+					totalConsumed, totalConsumedBytes)
+				r.incidentStates["source_stalled"] = false
+			}
+
+			if targetStalled {
+				if !r.incidentStates["target_stalled"] {
+					logger.WarnAI("incident", "start", jobID, "Target stalled: Consumed=%d, Produced=%d in 60+ seconds",
+						totalConsumed, totalMessages)
+					r.incidentStates["target_stalled"] = true
 				}
-				r.incidentStates["zero_throughput"] = false
+			} else if r.incidentStates["target_stalled"] {
+				logger.InfoAI("incident", "resolved", jobID, "Target throughput resumed: Produced=%d, Bytes=%d",
+					totalMessages, totalBytes)
+				r.incidentStates["target_stalled"] = false
 			}
 
 			if errorSpike && logCounter%3 == 0 {
@@ -349,11 +361,19 @@ func (r *KafMirrorImpl) collectMetrics(ctx context.Context, jobID string, callba
 			r.incidentMutex.Unlock()
 
 			// Milestone logging (reduced frequency for normal operations)
-			if isFirstMessage {
-				logger.InfoAI("metrics", "milestone", jobID, "First message processed: Messages=%d, Bytes=%d, Lag=%d",
+			if isFirstConsumed {
+				logger.InfoAI("metrics", "milestone", jobID, "First message consumed: Consumed=%d, Bytes=%d, Lag=%d",
+					totalConsumed, totalConsumedBytes, currentLag)
+			} else if isSignificantConsumed {
+				logger.InfoAI("metrics", "milestone", jobID, "Consumption milestone: Consumed=%d, Bytes=%d, Lag=%d",
+					totalConsumed, totalConsumedBytes, currentLag)
+			}
+
+			if isFirstProduced {
+				logger.InfoAI("metrics", "milestone", jobID, "First message produced: Produced=%d, Bytes=%d, Lag=%d",
 					totalMessages, totalBytes, currentLag)
-			} else if isSignificantMilestone {
-				logger.InfoAI("metrics", "milestone", jobID, "Processing milestone: Messages=%d, Bytes=%d, Lag=%d",
+			} else if isSignificantProduced {
+				logger.InfoAI("metrics", "milestone", jobID, "Production milestone: Produced=%d, Bytes=%d, Lag=%d",
 					totalMessages, totalBytes, currentLag)
 			}
 
